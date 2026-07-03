@@ -3,12 +3,35 @@ import { supabase } from './supabaseClient';
 import Auth from './Auth';
 import Dashboard from './Dashboard';
 
-const DEFAULT_QUESTS = [
-  { title: 'Push Day Workout', xp_reward: 150, kind: 'hero' },
-  { title: 'Log 8 working sets', xp_reward: 50, kind: 'daily' },
-  { title: 'Gym photo check-in', xp_reward: 30, kind: 'daily' },
-  { title: 'Beat a previous PR', xp_reward: 100, kind: 'daily' },
-];
+const SPLIT_DAYS = {
+  'Push/Pull/Legs': [
+    { label: 'Push Day' },
+    { label: 'Pull Day' },
+    { label: 'Leg Day' },
+  ],
+  'Upper/Lower': [{ label: 'Upper Day' }, { label: 'Lower Day' }],
+  'Full Body': [{ label: 'Full Body Day' }],
+  Bodybuilding: [{ label: 'Chest & Triceps' }, { label: 'Back & Biceps' }, { label: 'Shoulders' }, { label: 'Legs' }],
+  Powerlifting: [{ label: 'Squat Day' }, { label: 'Bench Day' }, { label: 'Deadlift Day' }],
+  Custom: [{ label: 'Workout Day' }],
+};
+
+function getTodaysWorkout(splitName) {
+  const days = SPLIT_DAYS[splitName] || SPLIT_DAYS['Push/Pull/Legs'];
+  const dayIndex = new Date().getDay() % days.length;
+  return days[dayIndex];
+}
+
+function timeAgo(dateStr) {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
+}
 
 async function fetchRoster(guildId) {
   const { data: rosterRows } = await supabase
@@ -61,6 +84,22 @@ async function fetchFriends(myId) {
   return { friends, requests, outgoingIds };
 }
 
+async function fetchActivity(myId, friendIds) {
+  const ids = [myId, ...friendIds];
+  const { data } = await supabase
+    .from('activity_log')
+    .select('id, user_id, action, created_at, profiles ( username )')
+    .in('user_id', ids)
+    .order('created_at', { ascending: false })
+    .limit(10);
+  return (data || []).map((a) => ({
+    id: a.id,
+    username: a.profiles?.username || '?',
+    action: a.action,
+    time: timeAgo(a.created_at),
+  }));
+}
+
 export default function App() {
   const [session, setSession] = useState(null);
   const [profile, setProfile] = useState(null);
@@ -71,6 +110,7 @@ export default function App() {
   const [friends, setFriends] = useState([]);
   const [friendRequests, setFriendRequests] = useState([]);
   const [outgoingIds, setOutgoingIds] = useState([]);
+  const [activity, setActivity] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -115,7 +155,13 @@ export default function App() {
       if (questData && questData.length > 0) {
         setQuests(questData);
       } else {
-        const seeded = DEFAULT_QUESTS.map((q) => ({ ...q, user_id: session.user.id, quest_date: today }));
+        const todaysWorkout = getTodaysWorkout(profileData?.split);
+        const seeded = [
+          { title: todaysWorkout.label, xp_reward: 150, kind: 'hero' },
+          { title: 'Log 8 working sets', xp_reward: 50, kind: 'daily' },
+          { title: 'Gym photo check-in', xp_reward: 30, kind: 'daily' },
+          { title: 'Beat a previous PR', xp_reward: 100, kind: 'daily' },
+        ].map((q) => ({ ...q, user_id: session.user.id, quest_date: today }));
         const { data: inserted } = await supabase.from('quests').insert(seeded).select();
         setQuests(inserted || []);
       }
@@ -141,6 +187,10 @@ export default function App() {
       setFriends(friendData.friends);
       setFriendRequests(friendData.requests);
       setOutgoingIds(friendData.outgoingIds);
+
+      const friendIds = friendData.friends.map((f) => f.userId);
+      const activityData = await fetchActivity(session.user.id, friendIds);
+      setActivity(activityData);
 
       setLoading(false);
     };
@@ -169,6 +219,7 @@ export default function App() {
       initialLevel={profile.level}
       initialStreak={profile.streak}
       username={profile.username}
+      initialSplit={profile.split}
       initialQuests={quests}
       initialBoss={boss}
       initialGuild={guildInfo}
@@ -176,6 +227,7 @@ export default function App() {
       initialFriends={friends}
       initialFriendRequests={friendRequests}
       initialOutgoingIds={outgoingIds}
+      initialActivity={activity}
       onSignOut={handleSignOut}
     />
   );

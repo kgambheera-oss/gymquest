@@ -1,10 +1,10 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import * as Tone from 'tone';
 import { supabase } from './supabaseClient';
 import {
   Zap, Flame, Sun, Moon, Bell, Dumbbell, ClipboardCheck, Camera,
   TrendingUp, CheckCircle2, Circle, Swords, Trophy, Users, ChevronRight,
-  Home, Target, User, Calendar, Lock, Settings,
+  Home, Target, User, Calendar, Lock, Settings, Send, MessageCircle,
 } from 'lucide-react';
 
 /* ---------------------------------- mock data (not yet wired to the DB) ---------------------------------- */
@@ -21,12 +21,6 @@ const WEEKLY_QUESTS = [
   { id: 101, title: 'Complete 4 workouts', xp: 200, progress: 3, target: 4 },
   { id: 102, title: 'Log a new personal record', xp: 150, progress: 0, target: 1 },
   { id: 103, title: 'Log 20 total sets', xp: 100, progress: 14, target: 20 },
-];
-
-const ACTIVITY = [
-  { name: 'Jordan', action: 'crushed Leg Day', time: '2h ago' },
-  { name: 'Taylor', action: 'joined Iron Wolves guild', time: '5h ago' },
-  { name: 'Sam', action: 'hit a new bench PR — 225 lb', time: 'yesterday' },
 ];
 
 const RANKS_DATA = {
@@ -76,6 +70,50 @@ const QUEST_ICONS = {
 };
 function getQuestIcon(title) {
   return QUEST_ICONS[title] || Target;
+}
+
+const SPLIT_OPTIONS = ['Push/Pull/Legs', 'Upper/Lower', 'Full Body', 'Bodybuilding', 'Powerlifting', 'Custom'];
+
+const SPLIT_DAYS = {
+  'Push/Pull/Legs': [
+    { label: 'Push Day', muscles: 'Chest · Shoulders · Triceps' },
+    { label: 'Pull Day', muscles: 'Back · Biceps · Rear Delts' },
+    { label: 'Leg Day', muscles: 'Quads · Hamstrings · Glutes · Calves' },
+  ],
+  'Upper/Lower': [
+    { label: 'Upper Day', muscles: 'Chest · Back · Shoulders · Arms' },
+    { label: 'Lower Day', muscles: 'Quads · Hamstrings · Glutes · Calves' },
+  ],
+  'Full Body': [{ label: 'Full Body Day', muscles: 'Total-body compound lifts' }],
+  Bodybuilding: [
+    { label: 'Chest & Triceps', muscles: 'Chest · Triceps' },
+    { label: 'Back & Biceps', muscles: 'Back · Biceps' },
+    { label: 'Shoulders', muscles: 'Delts · Traps' },
+    { label: 'Legs', muscles: 'Quads · Hamstrings · Glutes · Calves' },
+  ],
+  Powerlifting: [
+    { label: 'Squat Day', muscles: 'Squat · Quad Accessories' },
+    { label: 'Bench Day', muscles: 'Bench · Tricep Accessories' },
+    { label: 'Deadlift Day', muscles: 'Deadlift · Back Accessories' },
+  ],
+  Custom: [{ label: 'Workout Day', muscles: 'Your custom plan' }],
+};
+
+function getTodaysWorkout(splitName) {
+  const days = SPLIT_DAYS[splitName] || SPLIT_DAYS['Push/Pull/Legs'];
+  const dayIndex = new Date().getDay() % days.length;
+  return { ...days[dayIndex], dayNumber: dayIndex + 1, totalDays: days.length, splitName: splitName || 'Push/Pull/Legs' };
+}
+
+function timeAgo(dateStr) {
+  const diff = Date.now() - new Date(dateStr).getTime();
+  const mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return `${mins}m ago`;
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return `${hrs}h ago`;
+  const days = Math.floor(hrs / 24);
+  return `${days}d ago`;
 }
 
 const XP_PER_LEVEL = 3000;
@@ -161,16 +199,16 @@ function Confetti({ active }) {
   );
 }
 
-function HeroQuestCard({ quest, onComplete, T, A, dark, compact }) {
+function HeroQuestCard({ quest, onComplete, T, A, dark, compact, eyebrowText, subtitleText }) {
   if (!quest) return null;
   return (
     <div className={`relative rounded-2xl border-l-4 border-amber-400 border ${T.card} ${T.border} p-4 ${compact ? 'mb-3' : 'mb-6'} overflow-hidden`}>
-      <Eyebrow className={A.gold}>Push / Pull / Legs · Day 1</Eyebrow>
+      <Eyebrow className={A.gold}>{eyebrowText}</Eyebrow>
       <div className="flex items-center justify-between mt-1">
         <h2 className={`font-disp font-bold ${compact ? 'text-xl' : 'text-2xl'}`}>{quest.title}</h2>
         <Dumbbell size={compact ? 22 : 26} className={dark ? 'text-slate-700' : 'text-slate-300'} />
       </div>
-      <p className={`text-sm ${T.sub} mt-1`}>Chest · Shoulders · Triceps</p>
+      <p className={`text-sm ${T.sub} mt-1`}>{subtitleText}</p>
       <div className={`flex items-center justify-between ${compact ? 'mt-3' : 'mt-4'}`}>
         <span className={`font-disp font-bold text-sm ${A.gold}`}>+{quest.xp_reward} XP</span>
         <button
@@ -250,6 +288,7 @@ export default function Dashboard({
   initialLevel = 1,
   initialStreak = 0,
   username = 'You',
+  initialSplit = 'Push/Pull/Legs',
   initialQuests = [],
   initialBoss = null,
   initialGuild = null,
@@ -257,6 +296,7 @@ export default function Dashboard({
   initialFriends = [],
   initialFriendRequests = [],
   initialOutgoingIds = [],
+  initialActivity = [],
   onSignOut,
 }) {
   const [dark, setDark] = useState(true);
@@ -264,6 +304,7 @@ export default function Dashboard({
   const [boss, setBoss] = useState(initialBoss);
   const [xp, setXp] = useState(initialXp);
   const [level, setLevel] = useState(initialLevel);
+  const [split, setSplit] = useState(initialSplit);
   const [activeTab, setActiveTab] = useState('home');
   const [rankTab, setRankTab] = useState('friends');
   const [toast, setToast] = useState(null);
@@ -279,6 +320,10 @@ export default function Dashboard({
   const [friendSearch, setFriendSearch] = useState('');
   const [searchResults, setSearchResults] = useState([]);
   const [searching, setSearching] = useState(false);
+  const [activity, setActivity] = useState(initialActivity);
+  const [guildMessages, setGuildMessages] = useState([]);
+  const [chatInput, setChatInput] = useState('');
+  const [chatBusy, setChatBusy] = useState(false);
   const toastTimer = useRef(null);
 
   const T = dark
@@ -293,6 +338,15 @@ export default function Dashboard({
     setToast(msg);
     if (toastTimer.current) clearTimeout(toastTimer.current);
     toastTimer.current = setTimeout(() => setToast(null), 1500);
+  };
+
+  const logActivity = (action) => {
+    supabase
+      .from('activity_log')
+      .insert({ user_id: userId, action })
+      .then(({ error }) => {
+        if (error) console.error('Failed to log activity:', error);
+      });
   };
 
   const playLevelUpSound = async () => {
@@ -329,6 +383,7 @@ export default function Dashboard({
       setLevel(newLevel);
       fireToast('LEVEL UP!');
       celebrateLevelUp();
+      logActivity(`reached Level ${newLevel}`);
     } else if (delta > 0) {
       fireToast(`+${delta} XP`);
     }
@@ -370,6 +425,9 @@ export default function Dashboard({
       });
     if (quest.kind === 'hero' && newDone) {
       damageBoss(quest.xp_reward);
+      logActivity(`crushed ${quest.title}`);
+    } else if (newDone && quest.title === 'Beat a previous PR') {
+      logActivity('hit a new PR');
     }
   };
 
@@ -396,6 +454,7 @@ export default function Dashboard({
     applyXP(quest.xp_reward);
     await supabase.from('quests').update({ done: true }).eq('id', quest.id);
     await supabase.from('checkins').insert({ user_id: userId, photo_url: photoUrl });
+    logActivity('checked in with a gym photo');
     setUploadingId(null);
   };
 
@@ -421,6 +480,7 @@ export default function Dashboard({
     setGuildInfo({ id: guildId, name: guildName, roster });
     setGuildBusy(false);
     fireToast('Joined guild!');
+    logActivity(`joined ${guildName}`);
   };
 
   const createGuild = async () => {
@@ -441,10 +501,49 @@ export default function Dashboard({
     setGuildBusy(true);
     await supabase.from('guild_members').delete().eq('guild_id', guildInfo.id).eq('user_id', userId);
     setGuildInfo(null);
+    setGuildMessages([]);
     const { data: guildsList } = await supabase.from('guilds').select('id, name');
     setAvailableGuilds(guildsList || []);
     setGuildBusy(false);
   };
+
+  const loadGuildMessages = async (guildId) => {
+    const { data } = await supabase
+      .from('guild_messages')
+      .select('id, user_id, message, created_at, profiles ( username )')
+      .eq('guild_id', guildId)
+      .order('created_at', { ascending: true })
+      .limit(50);
+    setGuildMessages(
+      (data || []).map((m) => ({
+        id: m.id,
+        userId: m.user_id,
+        username: m.profiles?.username || '?',
+        message: m.message,
+        time: timeAgo(m.created_at),
+      }))
+    );
+  };
+
+  const sendGuildMessage = async () => {
+    if (!chatInput.trim() || !guildInfo) return;
+    setChatBusy(true);
+    const { error } = await supabase.from('guild_messages').insert({ guild_id: guildInfo.id, user_id: userId, message: chatInput.trim() });
+    if (!error) {
+      setChatInput('');
+      await loadGuildMessages(guildInfo.id);
+    } else {
+      fireToast('Message failed to send');
+    }
+    setChatBusy(false);
+  };
+
+  useEffect(() => {
+    if (activeTab === 'guild' && guildInfo) {
+      loadGuildMessages(guildInfo.id);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, guildInfo?.id]);
 
   const searchUsers = async () => {
     const q = friendSearch.trim();
@@ -487,10 +586,24 @@ export default function Dashboard({
     setFriendRequests((prev) => prev.filter((r) => r.friendshipId !== friendshipId));
   };
 
+  const changeSplit = async (newSplit) => {
+    setSplit(newSplit);
+    await supabase.from('profiles').update({ split: newSplit }).eq('id', userId);
+    fireToast('Split updated — takes effect next login');
+  };
+
   const heroQuest = quests.find((q) => q.kind === 'hero');
   const sideQuests = quests.filter((q) => q.kind !== 'hero');
   const totalToday = quests.length || 1;
   const doneToday = quests.filter((q) => q.done).length;
+
+  const todaysWorkout = getTodaysWorkout(split);
+  const heroEyebrow = `${split} · Day ${todaysWorkout.dayNumber}/${todaysWorkout.totalDays}`;
+
+  const rival =
+    friends.length > 0 ? friends.reduce((closest, f) => (Math.abs(f.xp - xp) < Math.abs(closest.xp - xp) ? f : closest), friends[0]) : null;
+  const rivalTotal = rival ? xp + rival.xp : 0;
+  const rivalSplit = rival && rivalTotal > 0 ? { you: (xp / rivalTotal) * 100, rival: (rival.xp / rivalTotal) * 100 } : { you: 50, rival: 50 };
 
   const pct = Math.min(100, (xp / XP_PER_LEVEL) * 100);
   const grid25 = gridRing(STATS.length, 25);
@@ -572,7 +685,15 @@ export default function Dashboard({
           <div className="h-full rounded-full bg-amber-400" style={{ width: `${pct}%`, transition: 'width 500ms ease' }} />
         </div>
 
-        <HeroQuestCard quest={heroQuest} onComplete={completeHero} T={T} A={A} dark={dark} />
+        <HeroQuestCard
+          quest={heroQuest}
+          onComplete={completeHero}
+          T={T}
+          A={A}
+          dark={dark}
+          eyebrowText={heroEyebrow}
+          subtitleText={todaysWorkout.muscles}
+        />
 
         {/* ---------- attributes ---------- */}
         <div className={`rounded-2xl border ${T.card} ${T.border} p-4 mb-6`}>
@@ -619,21 +740,34 @@ export default function Dashboard({
         </div>
 
         {/* ---------- rival ---------- */}
-        <div className={`rounded-2xl border-l-4 border-rose-500 border ${T.card} ${T.border} p-4 mb-6`}>
-          <div className="flex items-center gap-2 mb-3">
-            <Swords size={16} className={A.rose} />
-            <Eyebrow className={A.rose}>Rival Watch · This Week</Eyebrow>
+        {rival ? (
+          <div className={`rounded-2xl border-l-4 border-rose-500 border ${T.card} ${T.border} p-4 mb-6`}>
+            <div className="flex items-center gap-2 mb-3">
+              <Swords size={16} className={A.rose} />
+              <Eyebrow className={A.rose}>Rival Watch</Eyebrow>
+            </div>
+            <div className="flex items-center justify-between text-sm font-semibold mb-1.5">
+              <span>{username} · {xp.toLocaleString()} XP</span>
+              <span>{rival.username} · {rival.xp.toLocaleString()} XP</span>
+            </div>
+            <div className={`w-full h-2.5 rounded-full ${T.track} overflow-hidden flex`}>
+              <div className="h-full bg-cyan-400" style={{ width: `${rivalSplit.you}%`, transition: 'width 500ms ease' }} />
+              <div className="h-full bg-rose-500" style={{ width: `${rivalSplit.rival}%`, transition: 'width 500ms ease' }} />
+            </div>
+            <p className={`text-xs ${T.sub} mt-2`}>
+              {xp === rival.xp
+                ? "Dead even — next session breaks the tie."
+                : xp > rival.xp
+                ? `You're ahead of ${rival.username} by ${(xp - rival.xp).toLocaleString()} XP.`
+                : `${rival.username} is ahead by ${(rival.xp - xp).toLocaleString()} XP — close the gap.`}
+            </p>
           </div>
-          <div className="flex items-center justify-between text-sm font-semibold mb-1.5">
-            <span>You · 520 XP</span>
-            <span>Sam · 640 XP</span>
+        ) : (
+          <div className={`rounded-2xl border ${T.card} ${T.border} p-4 mb-6`}>
+            <Eyebrow className={`${T.faint} mb-1`}>Rival Watch</Eyebrow>
+            <p className={`text-sm ${T.faint}`}>Add a friend from the Ranks tab to get a rival.</p>
           </div>
-          <div className={`w-full h-2.5 rounded-full ${T.track} overflow-hidden flex`}>
-            <div className="h-full bg-cyan-400" style={{ width: '45%' }} />
-            <div className="h-full bg-rose-500" style={{ width: '55%' }} />
-          </div>
-          <p className={`text-xs ${T.sub} mt-2`}>Sam is 120 XP ahead — a solid session tonight closes the gap.</p>
-        </div>
+        )}
 
         {/* ---------- leaderboard ---------- */}
         <div className={`rounded-2xl border ${T.card} ${T.border} p-4 mb-6`}>
@@ -673,20 +807,24 @@ export default function Dashboard({
         {/* ---------- friend activity ---------- */}
         <div className="mb-6">
           <Eyebrow className={`${T.faint} mb-2`}>Friend Activity</Eyebrow>
-          <div className="space-y-2.5">
-            {ACTIVITY.map((a, i) => (
-              <div key={i} className="flex items-start gap-3">
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${T.track}`}>
-                  {a.name[0]}
+          {activity.length === 0 ? (
+            <p className={`text-sm ${T.faint}`}>No activity yet — complete a quest or add friends to see it here.</p>
+          ) : (
+            <div className="space-y-2.5">
+              {activity.map((a) => (
+                <div key={a.id} className="flex items-start gap-3">
+                  <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${T.track}`}>
+                    {a.username?.[0]?.toUpperCase()}
+                  </div>
+                  <p className="text-sm flex-1">
+                    <span className="font-semibold">{a.username}</span>{' '}
+                    <span className={T.sub}>{a.action}</span>
+                  </p>
+                  <span className={`text-xs shrink-0 ${T.faint}`}>{a.time}</span>
                 </div>
-                <p className="text-sm flex-1">
-                  <span className="font-semibold">{a.name}</span>{' '}
-                  <span className={T.sub}>{a.action}</span>
-                </p>
-                <span className={`text-xs shrink-0 ${T.faint}`}>{a.time}</span>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* ---------- season banner ---------- */}
@@ -717,7 +855,16 @@ export default function Dashboard({
         </div>
 
         <Eyebrow className={`${T.faint} mb-2`}>Today</Eyebrow>
-        <HeroQuestCard quest={heroQuest} onComplete={completeHero} T={T} A={A} dark={dark} compact />
+        <HeroQuestCard
+          quest={heroQuest}
+          onComplete={completeHero}
+          T={T}
+          A={A}
+          dark={dark}
+          compact
+          eyebrowText={heroEyebrow}
+          subtitleText={todaysWorkout.muscles}
+        />
 
         <div className="space-y-2 mb-6">
           {sideQuests.map((q) => (
@@ -737,7 +884,10 @@ export default function Dashboard({
                 <span className={`font-disp text-xs font-bold ${T.faint}`}>+{w.xp}</span>
               </div>
               <div className={`w-full h-2 rounded-full ${T.track} overflow-hidden mb-1`}>
-                <div className="h-full rounded-full bg-amber-400" style={{ width: `${Math.min(100, (w.progress / w.target) * 100)}%` }} />
+                <div
+                  className="h-full rounded-full bg-amber-400"
+                  style={{ width: `${Math.min(100, (w.progress / w.target) * 100)}%` }}
+                />
               </div>
               <span className={`text-xs ${T.faint}`}>{w.progress}/{w.target}</span>
             </div>
@@ -995,6 +1145,47 @@ export default function Dashboard({
           })}
         </div>
 
+        <div className="flex items-center gap-2 mb-2">
+          <MessageCircle size={16} className={A.gold} />
+          <Eyebrow className={A.gold}>Guild Chat</Eyebrow>
+        </div>
+        <div className={`rounded-2xl border ${T.card} ${T.border} p-3 mb-4`}>
+          <div className="space-y-3 mb-3 max-h-64 overflow-y-auto">
+            {guildMessages.length === 0 ? (
+              <p className={`text-sm ${T.faint} text-center py-4`}>No messages yet — silence... the gains are judging you.</p>
+            ) : (
+              guildMessages.map((m) => (
+                <div key={m.id} className="flex items-start gap-2">
+                  <div className={`w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 ${T.track}`}>
+                    {m.username?.[0]?.toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <span className="text-xs font-semibold">{m.username}</span>{' '}
+                    <span className={`text-xs ${T.faint}`}>{m.time}</span>
+                    <p className="text-sm break-words">{m.message}</p>
+                  </div>
+                </div>
+              ))
+            )}
+          </div>
+          <div className="flex gap-2">
+            <input
+              value={chatInput}
+              onChange={(e) => setChatInput(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && sendGuildMessage()}
+              placeholder="Say something..."
+              className={`flex-1 rounded-xl border px-3 py-2 text-sm outline-none ${T.card} ${T.border} ${T.text}`}
+            />
+            <button
+              onClick={sendGuildMessage}
+              disabled={chatBusy || !chatInput.trim()}
+              className="rounded-xl px-3 bg-amber-400 text-slate-950 disabled:opacity-50 flex items-center justify-center"
+            >
+              <Send size={16} />
+            </button>
+          </div>
+        </div>
+
         <button
           onClick={leaveGuild}
           disabled={guildBusy}
@@ -1035,6 +1226,21 @@ export default function Dashboard({
               <div className="font-disp font-bold text-xl">{s.value}</div>
               <div className={`text-xs ${T.faint}`}>{s.label}</div>
             </div>
+          ))}
+        </div>
+
+        <Eyebrow className={`${T.faint} mb-2`}>Workout Split</Eyebrow>
+        <div className="grid grid-cols-2 gap-2 mb-6">
+          {SPLIT_OPTIONS.map((s) => (
+            <button
+              key={s}
+              onClick={() => changeSplit(s)}
+              className={`rounded-xl border px-3 py-2 text-sm font-medium text-left transition-colors ${
+                split === s ? 'bg-amber-400 text-slate-950 border-amber-400' : `${T.card} ${T.border} ${T.text}`
+              }`}
+            >
+              {s}
+            </button>
           ))}
         </div>
 
