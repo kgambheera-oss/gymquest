@@ -4,18 +4,11 @@ import { supabase } from './supabaseClient';
 import {
   Zap, Flame, Sun, Moon, Bell, Dumbbell, ClipboardCheck, Camera,
   TrendingUp, CheckCircle2, Circle, Swords, Trophy, Users, ChevronRight,
-  Home, Target, User, Calendar, Lock, Settings, Send, MessageCircle,
+  Home, Target, User, Calendar, Lock, Settings, Send, MessageCircle, Shield,
+  Activity, Sparkles, X,
 } from 'lucide-react';
 
 /* ---------------------------------- mock data (not yet wired to the DB) ---------------------------------- */
-
-const STATS = [
-  { key: 'STR', label: 'Strength', value: 68 },
-  { key: 'PWR', label: 'Power', value: 54 },
-  { key: 'END', label: 'Endurance', value: 72 },
-  { key: 'DISC', label: 'Discipline', value: 81 },
-  { key: 'STAM', label: 'Stamina', value: 60 },
-];
 
 const WEEKLY_QUESTS = [
   { id: 101, title: 'Complete 4 workouts', xp: 200, progress: 3, target: 4 },
@@ -39,25 +32,10 @@ const RANKS_DATA = {
   ],
 };
 
-const BADGES = [
-  { id: 1, label: '7-Day Streak', Icon: Flame, unlocked: true },
-  { id: 2, label: 'First PR', Icon: TrendingUp, unlocked: true },
-  { id: 3, label: 'Guild Joined', Icon: Users, unlocked: true },
-  { id: 4, label: '100 Workouts', Icon: Dumbbell, unlocked: false },
-  { id: 5, label: '30-Day Streak', Icon: Flame, unlocked: false },
-  { id: 6, label: 'Season Champion', Icon: Trophy, unlocked: false },
-];
-
-const PROFILE_STATS = [
-  { label: 'Workouts', value: '142' },
-  { label: 'Longest Streak', value: '23d' },
-  { label: 'Total XP', value: '38.4k' },
-  { label: 'Member Since', value: 'Mar 2026' },
-];
-
 const NAV = [
   { key: 'home', label: 'Home', Icon: Home },
   { key: 'quests', label: 'Quests', Icon: Target },
+  { key: 'insights', label: 'Insights', Icon: Activity },
   { key: 'ranks', label: 'Ranks', Icon: Trophy },
   { key: 'guild', label: 'Guild', Icon: Users },
   { key: 'profile', label: 'Profile', Icon: User },
@@ -99,10 +77,10 @@ const SPLIT_DAYS = {
   Custom: [{ label: 'Workout Day', muscles: 'Your custom plan' }],
 };
 
-function getTodaysWorkout(splitName) {
+function getWorkoutForDay(splitName, dayIndex) {
   const days = SPLIT_DAYS[splitName] || SPLIT_DAYS['Push/Pull/Legs'];
-  const dayIndex = new Date().getDay() % days.length;
-  return { ...days[dayIndex], dayNumber: dayIndex + 1, totalDays: days.length, splitName: splitName || 'Push/Pull/Legs' };
+  const idx = ((dayIndex % days.length) + days.length) % days.length;
+  return { ...days[idx], dayNumber: idx + 1, totalDays: days.length, splitName: splitName || 'Push/Pull/Legs' };
 }
 
 function timeAgo(dateStr) {
@@ -114,6 +92,194 @@ function timeAgo(dateStr) {
   if (hrs < 24) return `${hrs}h ago`;
   const days = Math.floor(hrs / 24);
   return `${days}d ago`;
+}
+
+function formatMemberSince(dateStr) {
+  if (!dateStr) return '—';
+  return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+}
+
+/* ------------------------------- rank tiers (replaces boss battles) --------------------- */
+
+const RANK_TIERS = [
+  { name: 'Bronze I', minLevel: 1, color: '#c2703d' },
+  { name: 'Bronze II', minLevel: 3, color: '#c2703d' },
+  { name: 'Bronze III', minLevel: 5, color: '#c2703d' },
+  { name: 'Silver', minLevel: 7, color: '#a8b0bd' },
+  { name: 'Gold', minLevel: 11, color: '#eab308' },
+  { name: 'Platinum', minLevel: 16, color: '#2dd4bf' },
+  { name: 'Diamond', minLevel: 21, color: '#818cf8' },
+  { name: 'Elite', minLevel: 31, color: '#f43f5e' },
+];
+
+function getRank(level) {
+  let rank = RANK_TIERS[0];
+  for (const tier of RANK_TIERS) {
+    if (level >= tier.minLevel) rank = tier;
+  }
+  return rank;
+}
+
+function RankBadge({ level, size = 'sm' }) {
+  const rank = getRank(level);
+  const isElite = rank.name === 'Elite';
+  const sizeClasses = size === 'lg' ? 'px-3 py-1.5 text-sm gap-1.5' : 'px-2 py-0.5 text-xs gap-1';
+  return (
+    <span
+      className={`inline-flex items-center rounded-full font-disp font-bold ${sizeClasses} ${isElite ? 'elite-glow' : ''}`}
+      style={{ backgroundColor: `${rank.color}22`, color: rank.color, border: `1px solid ${rank.color}66` }}
+    >
+      <Shield size={size === 'lg' ? 14 : 11} fill={rank.color} fillOpacity={0.3} />
+      {rank.name}
+    </span>
+  );
+}
+
+function Heatmap({ completedDates, dark }) {
+  const cells = [];
+  const today = new Date();
+  for (let i = 83; i >= 0; i--) {
+    const d = new Date(today);
+    d.setDate(d.getDate() - i);
+    const dateStr = d.toISOString().slice(0, 10);
+    cells.push({ date: dateStr, completed: completedDates.includes(dateStr), dow: d.getDay() });
+  }
+  const firstDow = cells[0].dow;
+  const padded = Array(firstDow).fill(null).concat(cells);
+  const weeks = [];
+  for (let i = 0; i < padded.length; i += 7) weeks.push(padded.slice(i, i + 7));
+  const emptyColor = dark ? '#1e293b' : '#e2e8f0';
+
+  return (
+    <div className="flex gap-1 overflow-x-auto pb-1">
+      {weeks.map((week, wi) => (
+        <div key={wi} className="flex flex-col gap-1 shrink-0">
+          {week.map((day, di) => (
+            <div
+              key={di}
+              className="rounded-sm"
+              style={{ width: 10, height: 10, backgroundColor: !day ? 'transparent' : day.completed ? '#a78bfa' : emptyColor }}
+            />
+          ))}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function generateCoachTips({ streak, stats, doneToday, totalToday, weeklyStats, level }) {
+  const tips = [];
+
+  const weakest = [...stats].sort((a, b) => a.value - b.value)[0];
+  if (weakest && weakest.value < 40) {
+    const hint = weakest.key === 'END' ? 'cardio' : weakest.key === 'STAM' ? 'bodyweight' : weakest.key === 'PWR' ? 'explosive' : 'strength';
+    tips.push(`Your ${weakest.label} score is your lowest attribute (${weakest.value}) — log a few ${hint} sets to bring it up.`);
+  }
+
+  if (streak === 0) {
+    tips.push("You don't have an active streak right now — completing today's workout starts a new one.");
+  } else if (streak >= 3) {
+    tips.push(`${streak}-day streak going — miss a day and it resets, so keep the chain alive.`);
+  }
+
+  if (doneToday < totalToday) {
+    const left = totalToday - doneToday;
+    tips.push(`You've got ${left} quest${left === 1 ? '' : 's'} left today — finish them before you log off.`);
+  }
+
+  if (weeklyStats.workoutsThisWeek <= 2) {
+    tips.push(`Only ${weeklyStats.workoutsThisWeek} workout${weeklyStats.workoutsThisWeek === 1 ? '' : 's'} logged this week — aim for 3-4 to build real momentum.`);
+  } else if (weeklyStats.workoutsThisWeek >= 5) {
+    tips.push(`${weeklyStats.workoutsThisWeek} workouts this week — strong week, make sure you're recovering too.`);
+  }
+
+  const nextTier = RANK_TIERS.find((t) => t.minLevel > level);
+  if (nextTier) {
+    const gap = nextTier.minLevel - level;
+    tips.push(`${gap} more level${gap === 1 ? '' : 's'} to reach ${nextTier.name}.`);
+  }
+
+  return tips.slice(0, 4);
+}
+
+/* --------------------------- exercise catalog (preset + custom) ------------------------- */
+
+const EXERCISES = [
+  { name: 'Bench Press', category: 'strength' },
+  { name: 'Incline Bench Press', category: 'strength' },
+  { name: 'Decline Bench Press', category: 'strength' },
+  { name: 'Dumbbell Bench Press', category: 'strength' },
+  { name: 'Dumbbell Incline Press', category: 'strength' },
+  { name: 'Chest Fly', category: 'strength' },
+  { name: 'Cable Fly', category: 'strength' },
+  { name: 'Squat', category: 'strength' },
+  { name: 'Front Squat', category: 'strength' },
+  { name: 'Goblet Squat', category: 'strength' },
+  { name: 'Leg Press', category: 'strength' },
+  { name: 'Lunges', category: 'strength' },
+  { name: 'Bulgarian Split Squat', category: 'strength' },
+  { name: 'Leg Extension', category: 'strength' },
+  { name: 'Leg Curl', category: 'strength' },
+  { name: 'Calf Raise', category: 'strength' },
+  { name: 'Deadlift', category: 'strength' },
+  { name: 'Romanian Deadlift', category: 'strength' },
+  { name: 'Sumo Deadlift', category: 'strength' },
+  { name: 'Hip Thrust', category: 'strength' },
+  { name: 'Barbell Row', category: 'strength' },
+  { name: 'T-Bar Row', category: 'strength' },
+  { name: 'Single-Arm Dumbbell Row', category: 'strength' },
+  { name: 'Seated Cable Row', category: 'strength' },
+  { name: 'Lat Pulldown', category: 'strength' },
+  { name: 'Face Pull', category: 'strength' },
+  { name: 'Shrugs', category: 'strength' },
+  { name: 'Overhead Press', category: 'strength' },
+  { name: 'Dumbbell Shoulder Press', category: 'strength' },
+  { name: 'Arnold Press', category: 'strength' },
+  { name: 'Lateral Raise', category: 'strength' },
+  { name: 'Front Raise', category: 'strength' },
+  { name: 'Rear Delt Fly', category: 'strength' },
+  { name: 'Upright Row', category: 'strength' },
+  { name: 'Close-Grip Bench Press', category: 'strength' },
+  { name: 'Bicep Curl', category: 'strength' },
+  { name: 'Hammer Curl', category: 'strength' },
+  { name: 'Barbell Curl', category: 'strength' },
+  { name: 'Preacher Curl', category: 'strength' },
+  { name: 'Tricep Extension', category: 'strength' },
+  { name: 'Skull Crushers', category: 'strength' },
+  { name: 'Tricep Pushdown', category: 'strength' },
+  { name: 'Power Clean', category: 'power' },
+  { name: 'Clean and Jerk', category: 'power' },
+  { name: 'Snatch', category: 'power' },
+  { name: 'Hang Clean', category: 'power' },
+  { name: 'Push Press', category: 'power' },
+  { name: 'Box Jump', category: 'power' },
+  { name: 'Kettlebell Swing', category: 'power' },
+  { name: 'Medicine Ball Slam', category: 'power' },
+  { name: 'Running', category: 'endurance' },
+  { name: 'Rowing (Cardio)', category: 'endurance' },
+  { name: 'Assault Bike', category: 'endurance' },
+  { name: 'Jump Rope', category: 'endurance' },
+  { name: 'Battle Ropes', category: 'endurance' },
+  { name: 'Burpees', category: 'endurance' },
+  { name: 'Stair Climber', category: 'endurance' },
+  { name: 'Elliptical', category: 'endurance' },
+  { name: 'Pull-Up', category: 'stamina' },
+  { name: 'Chin-Up', category: 'stamina' },
+  { name: 'Push-Up', category: 'stamina' },
+  { name: 'Dips', category: 'stamina' },
+  { name: 'Plank', category: 'stamina' },
+  { name: 'Sit-Up', category: 'stamina' },
+  { name: 'Crunch', category: 'stamina' },
+  { name: 'Hanging Leg Raise', category: 'stamina' },
+  { name: 'Russian Twist', category: 'stamina' },
+  { name: 'Mountain Climbers', category: 'stamina' },
+  { name: 'Bodyweight Squats', category: 'stamina' },
+  { name: 'Ab Wheel Rollout', category: 'stamina' },
+  { name: 'Cable Crunch', category: 'stamina' },
+];
+
+function scoreFromVolume(vol) {
+  return Math.min(100, Math.round((vol / 200) * 100));
 }
 
 const XP_PER_LEVEL = 3000;
@@ -170,7 +336,7 @@ function Eyebrow({ children, className = '' }) {
 function Confetti({ active }) {
   if (!active) return null;
   const pieces = Array.from({ length: 28 });
-  const colors = ['#fbbf24', '#fb923c', '#22d3ee', '#f43f5e', '#34d399'];
+  const colors = ['#a78bfa', '#fb923c', '#22d3ee', '#f43f5e', '#34d399'];
   return (
     <div className="fixed inset-0 pointer-events-none z-50 overflow-hidden">
       {pieces.map((_, i) => {
@@ -199,23 +365,23 @@ function Confetti({ active }) {
   );
 }
 
-function HeroQuestCard({ quest, onComplete, T, A, dark, compact, eyebrowText, subtitleText }) {
+function HeroQuestCard({ quest, onComplete, T, A, dark, compact, eyebrowText, subtitleText, titleText }) {
   if (!quest) return null;
   return (
-    <div className={`relative rounded-2xl border-l-4 border-amber-400 border ${T.card} ${T.border} p-4 ${compact ? 'mb-3' : 'mb-6'} overflow-hidden`}>
-      <Eyebrow className={A.gold}>{eyebrowText}</Eyebrow>
+    <div className={`relative rounded-2xl border-l-4 border-violet-400 border ${T.card} ${T.border} p-4 ${compact ? 'mb-3' : 'mb-6'} overflow-hidden`}>
+      <Eyebrow className={A.primary}>{eyebrowText}</Eyebrow>
       <div className="flex items-center justify-between mt-1">
-        <h2 className={`font-disp font-bold ${compact ? 'text-xl' : 'text-2xl'}`}>{quest.title}</h2>
+        <h2 className={`font-disp font-bold ${compact ? 'text-xl' : 'text-2xl'}`}>{titleText || quest.title}</h2>
         <Dumbbell size={compact ? 22 : 26} className={dark ? 'text-slate-700' : 'text-slate-300'} />
       </div>
       <p className={`text-sm ${T.sub} mt-1`}>{subtitleText}</p>
       <div className={`flex items-center justify-between ${compact ? 'mt-3' : 'mt-4'}`}>
-        <span className={`font-disp font-bold text-sm ${A.gold}`}>+{quest.xp_reward} XP</span>
+        <span className={`font-disp font-bold text-sm ${A.primary}`}>+{quest.xp_reward} XP</span>
         <button
           onClick={onComplete}
           disabled={quest.done}
-          className={`font-disp font-bold text-sm uppercase tracking-wide px-4 py-2 rounded-xl flex items-center gap-1.5 transition-colors ${
-            quest.done ? 'bg-emerald-500 bg-opacity-20 text-emerald-400' : 'bg-amber-400 text-slate-950 hover:bg-amber-300'
+          className={`font-disp font-bold text-sm uppercase tracking-wide px-4 py-2 rounded-xl flex items-center gap-1.5 transition-all active:scale-95 ${
+            quest.done ? 'bg-emerald-500 bg-opacity-20 text-emerald-400' : 'bg-violet-400 text-slate-950 hover:bg-violet-300'
           }`}
         >
           {quest.done ? (
@@ -236,7 +402,7 @@ function HeroQuestCard({ quest, onComplete, T, A, dark, compact, eyebrowText, su
 function QuestRow({ quest, onToggle, onPhotoChange, uploading, T }) {
   const Icon = getQuestIcon(quest.title);
   const needsPhoto = quest.title === 'Gym photo check-in';
-  const rowClass = `w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-colors ${T.card} ${T.border}`;
+  const rowClass = `w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-all active:scale-[0.98] ${T.card} ${T.border}`;
 
   const inner = (
     <>
@@ -287,24 +453,35 @@ export default function Dashboard({
   initialXp = 0,
   initialLevel = 1,
   initialStreak = 0,
+  initialLongestStreak = 0,
+  initialWorkoutCount = 0,
+  createdAt = null,
   username = 'You',
   initialSplit = 'Push/Pull/Legs',
+  initialSplitDayIndex = 0,
   initialQuests = [],
-  initialBoss = null,
   initialGuild = null,
   initialAvailableGuilds = [],
   initialFriends = [],
   initialFriendRequests = [],
   initialOutgoingIds = [],
   initialActivity = [],
+  initialAttributeCounts = { strength: 0, power: 0, endurance: 0, stamina: 0 },
+  initialDisciplineCount = 0,
+  initialCompletedDates = [],
+  initialWeeklyStats = { workoutsThisWeek: 0, xpThisWeek: 0, completionRate: 0, liftsThisWeek: 0 },
+  initialCheckinPhotos = [],
   onSignOut,
 }) {
   const [dark, setDark] = useState(true);
   const [quests, setQuests] = useState(initialQuests);
-  const [boss, setBoss] = useState(initialBoss);
   const [xp, setXp] = useState(initialXp);
   const [level, setLevel] = useState(initialLevel);
+  const [streak, setStreak] = useState(initialStreak);
+  const [longestStreak, setLongestStreak] = useState(initialLongestStreak);
+  const [workoutCount, setWorkoutCount] = useState(initialWorkoutCount);
   const [split, setSplit] = useState(initialSplit);
+  const [splitDayIndex, setSplitDayIndex] = useState(initialSplitDayIndex);
   const [activeTab, setActiveTab] = useState('home');
   const [rankTab, setRankTab] = useState('friends');
   const [toast, setToast] = useState(null);
@@ -324,6 +501,17 @@ export default function Dashboard({
   const [guildMessages, setGuildMessages] = useState([]);
   const [chatInput, setChatInput] = useState('');
   const [chatBusy, setChatBusy] = useState(false);
+  const [attributeCounts, setAttributeCounts] = useState(initialAttributeCounts);
+  const [disciplineCount, setDisciplineCount] = useState(initialDisciplineCount);
+  const [completedDates] = useState(initialCompletedDates);
+  const [weeklyStats, setWeeklyStats] = useState(initialWeeklyStats);
+  const [checkinPhotos, setCheckinPhotos] = useState(initialCheckinPhotos);
+  const [selectedExercise, setSelectedExercise] = useState(EXERCISES[0].name);
+  const [customExercise, setCustomExercise] = useState('');
+  const [logWeight, setLogWeight] = useState('');
+  const [logReps, setLogReps] = useState('');
+  const [logSets, setLogSets] = useState('1');
+  const [logBusy, setLogBusy] = useState(false);
   const toastTimer = useRef(null);
 
   const T = dark
@@ -331,8 +519,8 @@ export default function Dashboard({
     : { page: 'bg-slate-300', bg: 'bg-slate-50', card: 'bg-white', border: 'border-slate-200', text: 'text-slate-900', sub: 'text-slate-500', faint: 'text-slate-400', track: 'bg-slate-200' };
 
   const A = dark
-    ? { gold: 'text-amber-400', ember: 'text-orange-400', cyan: 'text-cyan-400', rose: 'text-rose-400' }
-    : { gold: 'text-amber-600', ember: 'text-orange-600', cyan: 'text-cyan-600', rose: 'text-rose-600' };
+    ? { primary: 'text-violet-400', ember: 'text-orange-400', cyan: 'text-cyan-400', rose: 'text-rose-400' }
+    : { primary: 'text-violet-600', ember: 'text-orange-600', cyan: 'text-cyan-600', rose: 'text-rose-600' };
 
   const fireToast = (msg) => {
     setToast(msg);
@@ -381,11 +569,16 @@ export default function Dashboard({
     setXp(next);
     if (leveledUp) {
       setLevel(newLevel);
-      fireToast('LEVEL UP!');
+      const oldRank = getRank(level);
+      const newRank = getRank(newLevel);
+      fireToast(newRank.name !== oldRank.name ? `RANK UP: ${newRank.name}!` : 'LEVEL UP!');
       celebrateLevelUp();
       logActivity(`reached Level ${newLevel}`);
     } else if (delta > 0) {
       fireToast(`+${delta} XP`);
+    }
+    if (delta > 0) {
+      setWeeklyStats((w) => ({ ...w, xpThisWeek: w.xpThisWeek + delta }));
     }
     supabase
       .from('profiles')
@@ -396,19 +589,34 @@ export default function Dashboard({
       });
   };
 
-  const damageBoss = (amount) => {
-    setBoss((prev) => {
-      if (!prev) return prev;
-      const newHp = Math.max(0, prev.current_hp - amount);
-      supabase
-        .from('boss_battles')
-        .update({ current_hp: newHp })
-        .eq('id', prev.id)
-        .then(({ error }) => {
-          if (error) console.error('Failed to save boss damage:', error);
-        });
-      return { ...prev, current_hp: newHp };
-    });
+  const updateStreak = async () => {
+    const today = new Date().toISOString().slice(0, 10);
+    const { data: profileRow } = await supabase
+      .from('profiles')
+      .select('streak, longest_streak, last_active_date')
+      .eq('id', userId)
+      .single();
+    if (!profileRow || profileRow.last_active_date === today) return;
+
+    let newStreak;
+    if (profileRow.last_active_date) {
+      const diffDays = Math.round((new Date(today) - new Date(profileRow.last_active_date)) / 86400000);
+      newStreak = diffDays === 1 ? (profileRow.streak || 0) + 1 : 1;
+    } else {
+      newStreak = 1;
+    }
+    const newLongest = Math.max(newStreak, profileRow.longest_streak || 0);
+
+    setStreak(newStreak);
+    setLongestStreak(newLongest);
+    setWorkoutCount((c) => c + 1);
+
+    await supabase
+      .from('profiles')
+      .update({ streak: newStreak, longest_streak: newLongest, last_active_date: today })
+      .eq('id', userId);
+
+    if (newStreak > 1) logActivity(`hit a ${newStreak}-day streak`);
   };
 
   const toggleQuest = (quest) => {
@@ -416,6 +624,7 @@ export default function Dashboard({
     const newDone = !quest.done;
     setQuests((prev) => prev.map((q) => (q.id === quest.id ? { ...q, done: newDone } : q)));
     applyXP(newDone ? quest.xp_reward : -quest.xp_reward);
+    if (newDone) setDisciplineCount((c) => c + 1);
     supabase
       .from('quests')
       .update({ done: newDone })
@@ -424,8 +633,9 @@ export default function Dashboard({
         if (error) console.error('Failed to save quest:', error);
       });
     if (quest.kind === 'hero' && newDone) {
-      damageBoss(quest.xp_reward);
       logActivity(`crushed ${quest.title}`);
+      updateStreak();
+      setWeeklyStats((w) => ({ ...w, workoutsThisWeek: w.workoutsThisWeek + 1 }));
     } else if (newDone && quest.title === 'Beat a previous PR') {
       logActivity('hit a new PR');
     }
@@ -452,10 +662,66 @@ export default function Dashboard({
     const photoUrl = urlData.publicUrl;
     setQuests((prev) => prev.map((q) => (q.id === quest.id ? { ...q, done: true, photo_url: photoUrl } : q)));
     applyXP(quest.xp_reward);
-    await supabase.from('quests').update({ done: true }).eq('id', quest.id);
+    setDisciplineCount((c) => c + 1);
+    await supabase.from('quests').update({ done: true, photo_url: photoUrl }).eq('id', quest.id);
     await supabase.from('checkins').insert({ user_id: userId, photo_url: photoUrl });
     logActivity('checked in with a gym photo');
     setUploadingId(null);
+  };
+
+  const deleteCheckinPhoto = async (photo) => {
+    if (!window.confirm('Delete this photo? This can\'t be undone.')) return;
+    const path = photo.photo_url.split('/checkins/')[1];
+    if (path) {
+      await supabase.storage.from('checkins').remove([path]);
+    }
+    await supabase.from('checkins').delete().eq('id', photo.id);
+    setCheckinPhotos((prev) => prev.filter((p) => p.id !== photo.id));
+    fireToast('Photo deleted');
+  };
+
+  const logLift = async () => {
+    const exerciseName = selectedExercise === '__custom__' ? customExercise.trim() : selectedExercise;
+    const reps = parseInt(logReps, 10) || 0;
+    const sets = parseInt(logSets, 10) || 1;
+    const weight = parseFloat(logWeight) || 0;
+    if (!exerciseName || reps <= 0) {
+      fireToast('Add reps at least');
+      return;
+    }
+    setLogBusy(true);
+    const category = EXERCISES.find((e) => e.name === exerciseName)?.category || 'strength';
+
+    const { data: prevBest } = await supabase
+      .from('exercise_logs')
+      .select('weight')
+      .eq('user_id', userId)
+      .eq('exercise', exerciseName)
+      .order('weight', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    const isPR = weight > 0 && (!prevBest || weight > prevBest.weight);
+
+    const { error } = await supabase.from('exercise_logs').insert({ user_id: userId, exercise: exerciseName, category, weight, reps, sets });
+    if (error) {
+      fireToast('Could not log lift');
+      setLogBusy(false);
+      return;
+    }
+
+    setAttributeCounts((prev) => ({ ...prev, [category]: (prev[category] || 0) + reps * sets }));
+    fireToast(isPR ? `New PR: ${exerciseName}!` : `${exerciseName} logged`);
+    logActivity(isPR ? `hit a new PR on ${exerciseName}` : `logged ${exerciseName}`);
+
+    if (isPR) {
+      const prQuest = quests.find((q) => q.title === 'Beat a previous PR');
+      if (prQuest && !prQuest.done) toggleQuest(prQuest);
+    }
+
+    setLogWeight('');
+    setLogReps('');
+    setCustomExercise('');
+    setLogBusy(false);
   };
 
   const fetchRoster = async (guildId) => {
@@ -464,7 +730,7 @@ export default function Dashboard({
       .select('user_id, profiles ( username, level, xp )')
       .eq('guild_id', guildId);
     return (rosterRows || [])
-      .map((r) => ({ userId: r.user_id, username: r.profiles?.username, level: r.profiles?.level, xp: r.profiles?.xp || 0 }))
+      .map((r) => ({ userId: r.user_id, username: r.profiles?.username, level: r.profiles?.level || 1, xp: r.profiles?.xp || 0 }))
       .sort((a, b) => b.xp - a.xp);
   };
 
@@ -554,7 +820,7 @@ export default function Dashboard({
     setSearching(true);
     const { data } = await supabase
       .from('profiles')
-      .select('id, username')
+      .select('id, username, level')
       .ilike('username', `%${q}%`)
       .neq('id', userId)
       .limit(10);
@@ -588,8 +854,9 @@ export default function Dashboard({
 
   const changeSplit = async (newSplit) => {
     setSplit(newSplit);
-    await supabase.from('profiles').update({ split: newSplit }).eq('id', userId);
-    fireToast('Split updated — takes effect next login');
+    setSplitDayIndex(0);
+    await supabase.from('profiles').update({ split: newSplit, split_day_index: 0 }).eq('id', userId);
+    fireToast('Split updated!');
   };
 
   const heroQuest = quests.find((q) => q.kind === 'hero');
@@ -597,13 +864,29 @@ export default function Dashboard({
   const totalToday = quests.length || 1;
   const doneToday = quests.filter((q) => q.done).length;
 
-  const todaysWorkout = getTodaysWorkout(split);
+  const todaysWorkout = getWorkoutForDay(split, splitDayIndex);
   const heroEyebrow = `${split} · Day ${todaysWorkout.dayNumber}/${todaysWorkout.totalDays}`;
+  const myRank = getRank(level);
 
   const rival =
     friends.length > 0 ? friends.reduce((closest, f) => (Math.abs(f.xp - xp) < Math.abs(closest.xp - xp) ? f : closest), friends[0]) : null;
   const rivalTotal = rival ? xp + rival.xp : 0;
   const rivalSplit = rival && rivalTotal > 0 ? { you: (xp / rivalTotal) * 100, rival: (rival.xp / rivalTotal) * 100 } : { you: 50, rival: 50 };
+
+  const STATS = [
+    { key: 'STR', label: 'Strength', value: scoreFromVolume(attributeCounts.strength || 0) },
+    { key: 'PWR', label: 'Power', value: scoreFromVolume(attributeCounts.power || 0) },
+    { key: 'END', label: 'Endurance', value: scoreFromVolume(attributeCounts.endurance || 0) },
+    { key: 'DISC', label: 'Discipline', value: Math.min(100, Math.round((disciplineCount / 30) * 100)) },
+    { key: 'STAM', label: 'Stamina', value: scoreFromVolume(attributeCounts.stamina || 0) },
+  ];
+  const totalXpAllTime = (level - 1) * XP_PER_LEVEL + xp;
+  const PROFILE_STATS = [
+    { label: 'Workouts', value: String(workoutCount) },
+    { label: 'Longest Streak', value: `${longestStreak}d` },
+    { label: 'Total XP', value: totalXpAllTime >= 1000 ? `${(totalXpAllTime / 1000).toFixed(1)}k` : String(totalXpAllTime) },
+    { label: 'Member Since', value: formatMemberSince(createdAt) },
+  ];
 
   const pct = Math.min(100, (xp / XP_PER_LEVEL) * 100);
   const grid25 = gridRing(STATS.length, 25);
@@ -614,6 +897,7 @@ export default function Dashboard({
   const statVerts = STATS.map((s, i) => pointAt(i, STATS.length, (R * s.value) / 100));
   const axisEnds = STATS.map((_, i) => pointAt(i, STATS.length, R));
   const labelPts = STATS.map((_, i) => pointAt(i, STATS.length, R + 28));
+  const coachTips = generateCoachTips({ streak, stats: STATS, doneToday, totalToday, weeklyStats, level });
   const rankList =
     rankTab === 'guild'
       ? guildInfo
@@ -621,11 +905,14 @@ export default function Dashboard({
             rank: idx + 1,
             name: p.userId === userId ? username : p.username,
             xp: p.xp,
+            level: p.userId === userId ? level : p.level,
             isUser: p.userId === userId,
           }))
         : []
+      : rankTab === 'friends'
+      ? []
       : RANKS_DATA[rankTab];
-  const friendBoard = [...friends, { userId, username, xp }].sort((a, b) => b.xp - a.xp);
+  const friendBoard = [...friends.map((f) => ({ ...f })), { userId, username, xp, level }].sort((a, b) => b.xp - a.xp);
 
   let mainContent = null;
 
@@ -635,7 +922,7 @@ export default function Dashboard({
         {/* ---------- top bar ---------- */}
         <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-2">
-            <div className="w-9 h-9 rounded-xl bg-amber-400 flex items-center justify-center">
+            <div className="w-9 h-9 rounded-xl bg-violet-400 flex items-center justify-center">
               <Zap size={19} className="text-slate-950" strokeWidth={2.5} fill="currentColor" />
             </div>
             <span className="font-disp font-bold text-xl tracking-tight">GymQuest</span>
@@ -643,7 +930,7 @@ export default function Dashboard({
           <div className="flex items-center gap-2">
             <button
               onClick={() => setDark((d) => !d)}
-              className={`w-9 h-9 rounded-full flex items-center justify-center border ${T.card} ${T.border}`}
+              className={`w-9 h-9 rounded-full flex items-center justify-center border transition-all active:scale-90 ${T.card} ${T.border}`}
               aria-label="Toggle theme"
             >
               {dark ? <Sun size={15} className="text-amber-400" /> : <Moon size={15} className="text-slate-600" />}
@@ -656,20 +943,20 @@ export default function Dashboard({
         </div>
 
         {/* ---------- streak + level row ---------- */}
-        <div className="flex items-stretch gap-3 mb-4">
+        <div className="flex items-stretch gap-3 mb-3">
           <div className={`flex-1 rounded-2xl border ${T.card} ${T.border} p-3 flex items-center gap-3`}>
             <div className="w-11 h-11 rounded-xl bg-orange-500 bg-opacity-10 flex items-center justify-center" style={{ boxShadow: dark ? '0 0 18px rgba(251,146,60,0.25)' : 'none' }}>
               <Flame size={22} className={`flame-pulse ${A.ember}`} fill="currentColor" />
             </div>
             <div>
-              <div className="font-disp font-bold text-xl leading-none">{initialStreak}</div>
+              <div className="font-disp font-bold text-xl leading-none">{streak}</div>
               <div className={`text-xs ${T.sub} mt-0.5`}>day streak</div>
             </div>
           </div>
 
           <div className={`rounded-2xl border ${T.card} ${T.border} p-3 flex items-center gap-3`}>
             <div className="relative w-12 h-12 shrink-0">
-              <ProgressRing pct={pct} size={48} stroke={4} colorClass="stroke-amber-400" trackClass={dark ? 'stroke-slate-800' : 'stroke-slate-200'} />
+              <ProgressRing pct={pct} size={48} stroke={4} colorClass="stroke-violet-400" trackClass={dark ? 'stroke-slate-800' : 'stroke-slate-200'} />
               <div className="absolute inset-0 flex items-center justify-center">
                 <span className="font-disp font-bold text-sm">{level}</span>
               </div>
@@ -681,8 +968,12 @@ export default function Dashboard({
           </div>
         </div>
 
+        <div className="mb-4">
+          <RankBadge level={level} />
+        </div>
+
         <div className={`w-full h-2 rounded-full ${T.track} overflow-hidden mb-6`}>
-          <div className="h-full rounded-full bg-amber-400" style={{ width: `${pct}%`, transition: 'width 500ms ease' }} />
+          <div className="h-full rounded-full bg-violet-400" style={{ width: `${pct}%`, transition: 'width 500ms ease' }} />
         </div>
 
         <HeroQuestCard
@@ -693,6 +984,7 @@ export default function Dashboard({
           dark={dark}
           eyebrowText={heroEyebrow}
           subtitleText={todaysWorkout.muscles}
+          titleText={todaysWorkout.label}
         />
 
         {/* ---------- attributes ---------- */}
@@ -705,7 +997,7 @@ export default function Dashboard({
             {axisEnds.map((p, i) => (
               <line key={i} x1={CX} y1={CY} x2={p.x} y2={p.y} className={dark ? 'stroke-slate-700' : 'stroke-slate-300'} strokeWidth="1" />
             ))}
-            <polygon points={statPoly} className="fill-cyan-400 stroke-cyan-400" fillOpacity="0.28" strokeWidth="2" />
+            <polygon points={statPoly} className="fill-cyan-400 stroke-cyan-400" fillOpacity="0.28" strokeWidth="2" style={{ transition: 'all 500ms ease' }} />
             {statVerts.map((p, i) => (
               <circle key={i} cx={p.x} cy={p.y} r="3.5" className="fill-cyan-300" />
             ))}
@@ -727,6 +1019,7 @@ export default function Dashboard({
               </div>
             ))}
           </div>
+          <p className={`text-xs ${T.faint} mt-2`}>Built from your logged lifts and completed quests — log more to grow these.</p>
         </div>
 
         {/* ---------- side quests ---------- */}
@@ -773,8 +1066,8 @@ export default function Dashboard({
         <div className={`rounded-2xl border ${T.card} ${T.border} p-4 mb-6`}>
           <div className="flex items-center justify-between mb-3">
             <div className="flex items-center gap-2">
-              <Trophy size={16} className={A.gold} />
-              <Eyebrow className={A.gold}>Friend Leaderboard</Eyebrow>
+              <Trophy size={16} className={A.primary} />
+              <Eyebrow className={A.primary}>Friend Leaderboard</Eyebrow>
             </div>
             <span className={`text-xs font-medium ${T.sub} flex items-center gap-0.5`}>
               See all <ChevronRight size={12} />
@@ -789,13 +1082,14 @@ export default function Dashboard({
                 return (
                   <div
                     key={p.userId}
-                    className={`flex items-center gap-3 rounded-lg ${isMe ? '-mx-1 px-1 py-1 bg-amber-400 bg-opacity-10 border border-amber-400 border-opacity-30' : ''}`}
+                    className={`flex items-center gap-3 rounded-lg ${isMe ? '-mx-1 px-1 py-1 bg-violet-400 bg-opacity-10 border border-violet-400 border-opacity-30' : ''}`}
                   >
-                    <span className={`font-disp font-bold text-sm w-5 ${isMe ? 'text-amber-400' : T.faint}`}>{idx + 1}</span>
-                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${isMe ? 'bg-amber-400 text-slate-950' : T.track}`}>
+                    <span className={`font-disp font-bold text-sm w-5 ${isMe ? 'text-violet-400' : T.faint}`}>{idx + 1}</span>
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${isMe ? 'bg-violet-400 text-slate-950' : T.track}`}>
                       {p.username?.[0]?.toUpperCase()}
                     </div>
                     <span className={`flex-1 text-sm ${isMe ? 'font-semibold' : 'font-medium'}`}>{p.username}</span>
+                    <RankBadge level={p.level || 1} />
                     <span className={`text-xs font-semibold ${isMe ? 'text-emerald-400' : T.sub}`}>{(p.xp || 0).toLocaleString()} XP</span>
                   </div>
                 );
@@ -829,14 +1123,8 @@ export default function Dashboard({
 
         {/* ---------- season banner ---------- */}
         <div className={`rounded-2xl border ${T.card} ${T.border} p-4`}>
-          <div className="flex items-center justify-between mb-2">
-            <Eyebrow className={A.gold}>Summer Shred · Season 3</Eyebrow>
-            <span className={`text-xs font-semibold ${T.sub}`}>Week 3 / 8</span>
-          </div>
-          <div className={`w-full h-2 rounded-full ${T.track} overflow-hidden mb-2`}>
-            <div className="h-full rounded-full bg-amber-400" style={{ width: '37.5%' }} />
-          </div>
-          <p className={`text-xs ${T.sub}`}>Season rank #12 — finish top 10 to unlock the Shred Champion badge.</p>
+          <Eyebrow className={A.primary}>Seasonal Competition</Eyebrow>
+          <p className={`text-sm ${T.faint} mt-1`}>Coming soon — seasons will track everyone's ranking over a real competition window.</p>
         </div>
       </>
     );
@@ -848,7 +1136,7 @@ export default function Dashboard({
           <p className={`text-sm ${T.sub} mt-0.5`}>{doneToday} of {quests.length} complete today</p>
           <div className={`w-full h-1.5 rounded-full ${T.track} overflow-hidden mt-2`}>
             <div
-              className="h-full rounded-full bg-amber-400"
+              className="h-full rounded-full bg-violet-400"
               style={{ width: `${Math.min(100, (doneToday / totalToday) * 100)}%`, transition: 'width 400ms ease' }}
             />
           </div>
@@ -864,6 +1152,7 @@ export default function Dashboard({
           compact
           eyebrowText={heroEyebrow}
           subtitleText={todaysWorkout.muscles}
+          titleText={todaysWorkout.label}
         />
 
         <div className="space-y-2 mb-6">
@@ -872,9 +1161,63 @@ export default function Dashboard({
           ))}
         </div>
 
+        <Eyebrow className={`${T.faint} mb-2`}>Log a Lift</Eyebrow>
+        <div className={`rounded-2xl border ${T.card} ${T.border} p-4 mb-6`}>
+          <select
+            value={selectedExercise}
+            onChange={(e) => setSelectedExercise(e.target.value)}
+            className={`w-full rounded-xl border px-3 py-2 text-sm mb-2 outline-none ${T.card} ${T.border} ${T.text}`}
+          >
+            {EXERCISES.map((ex) => (
+              <option key={ex.name} value={ex.name}>
+                {ex.name}
+              </option>
+            ))}
+            <option value="__custom__">Custom exercise...</option>
+          </select>
+          {selectedExercise === '__custom__' && (
+            <input
+              value={customExercise}
+              onChange={(e) => setCustomExercise(e.target.value)}
+              placeholder="Exercise name"
+              className={`w-full rounded-xl border px-3 py-2 text-sm mb-2 outline-none ${T.card} ${T.border} ${T.text}`}
+            />
+          )}
+          <div className="grid grid-cols-3 gap-2 mb-2">
+            <input
+              type="number"
+              value={logWeight}
+              onChange={(e) => setLogWeight(e.target.value)}
+              placeholder="Weight"
+              className={`rounded-xl border px-2 py-2 text-sm outline-none ${T.card} ${T.border} ${T.text}`}
+            />
+            <input
+              type="number"
+              value={logReps}
+              onChange={(e) => setLogReps(e.target.value)}
+              placeholder="Reps"
+              className={`rounded-xl border px-2 py-2 text-sm outline-none ${T.card} ${T.border} ${T.text}`}
+            />
+            <input
+              type="number"
+              value={logSets}
+              onChange={(e) => setLogSets(e.target.value)}
+              placeholder="Sets"
+              className={`rounded-xl border px-2 py-2 text-sm outline-none ${T.card} ${T.border} ${T.text}`}
+            />
+          </div>
+          <button
+            onClick={logLift}
+            disabled={logBusy}
+            className="w-full font-disp font-bold text-sm uppercase tracking-wide px-4 py-2 rounded-xl bg-violet-400 text-slate-950 hover:bg-violet-300 transition-all active:scale-95 disabled:opacity-50"
+          >
+            Log It
+          </button>
+        </div>
+
         <div className="flex items-center gap-2 mb-2">
-          <Calendar size={16} className={A.gold} />
-          <Eyebrow className={A.gold}>This Week</Eyebrow>
+          <Calendar size={16} className={A.primary} />
+          <Eyebrow className={A.primary}>This Week</Eyebrow>
         </div>
         <div className="space-y-2">
           {WEEKLY_QUESTS.map((w) => (
@@ -885,13 +1228,96 @@ export default function Dashboard({
               </div>
               <div className={`w-full h-2 rounded-full ${T.track} overflow-hidden mb-1`}>
                 <div
-                  className="h-full rounded-full bg-amber-400"
+                  className="h-full rounded-full bg-violet-400"
                   style={{ width: `${Math.min(100, (w.progress / w.target) * 100)}%` }}
                 />
               </div>
               <span className={`text-xs ${T.faint}`}>{w.progress}/{w.target}</span>
             </div>
           ))}
+        </div>
+      </>
+    );
+  } else if (activeTab === 'insights') {
+    mainContent = (
+      <>
+        <h1 className="font-disp font-bold text-2xl mb-4">Insights</h1>
+
+        <div className={`rounded-2xl border ${T.card} ${T.border} p-4 mb-6`}>
+          <Eyebrow className={A.primary}>Weekly Report</Eyebrow>
+          <div className="grid grid-cols-2 gap-4 mt-3">
+            <div>
+              <div className="font-disp font-bold text-2xl">{weeklyStats.workoutsThisWeek}/7</div>
+              <div className={`text-xs ${T.faint}`}>Workouts</div>
+            </div>
+            <div>
+              <div className="font-disp font-bold text-2xl text-violet-400">{weeklyStats.xpThisWeek}</div>
+              <div className={`text-xs ${T.faint}`}>XP Earned</div>
+            </div>
+            <div>
+              <div className="font-disp font-bold text-2xl">{weeklyStats.liftsThisWeek}</div>
+              <div className={`text-xs ${T.faint}`}>Lifts Logged</div>
+            </div>
+            <div>
+              <div className="font-disp font-bold text-2xl">{weeklyStats.completionRate}%</div>
+              <div className={`text-xs ${T.faint}`}>Quest Completion</div>
+            </div>
+          </div>
+        </div>
+
+        <div className={`rounded-2xl border ${T.card} ${T.border} p-4 mb-6`}>
+          <Eyebrow className={`${T.faint} mb-2`}>Consistency — Last 12 Weeks</Eyebrow>
+          <Heatmap completedDates={completedDates} dark={dark} />
+          <div className="flex items-center gap-2 mt-2">
+            <span className={`text-xs ${T.faint}`}>Less</span>
+            <div className="rounded-sm" style={{ width: 10, height: 10, backgroundColor: dark ? '#1e293b' : '#e2e8f0' }} />
+            <div className="rounded-sm" style={{ width: 10, height: 10, backgroundColor: '#a78bfa' }} />
+            <span className={`text-xs ${T.faint}`}>More</span>
+          </div>
+        </div>
+
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-2">
+            <Sparkles size={16} className={A.primary} />
+            <Eyebrow className={A.primary}>Coach</Eyebrow>
+          </div>
+          <p className={`text-xs ${T.faint} mb-2`}>Personalized tips computed from your real stats — not a chatbot, just smart math.</p>
+          <div className="space-y-2">
+            {coachTips.length === 0 ? (
+              <div className={`rounded-xl border p-3 ${T.card} ${T.border} text-sm ${T.sub}`}>You're on track — nothing urgent right now.</div>
+            ) : (
+              coachTips.map((tip, i) => (
+                <div key={i} className={`rounded-xl border p-3 ${T.card} ${T.border} text-sm`}>
+                  {tip}
+                </div>
+              ))
+            )}
+          </div>
+        </div>
+
+        <div>
+          <Eyebrow className={`${T.faint} mb-2`}>Transformation Timeline</Eyebrow>
+          {checkinPhotos.length === 0 ? (
+            <p className={`text-sm ${T.faint}`}>No check-in photos yet — complete the Gym Photo Check-in quest to start your timeline.</p>
+          ) : (
+            <div className="flex gap-2 overflow-x-auto pb-2">
+              {checkinPhotos.map((c) => (
+                <div key={c.id} className="shrink-0 text-center relative">
+                  <img src={c.photo_url} alt="" className="w-20 h-20 rounded-xl object-cover" />
+                  <button
+                    onClick={() => deleteCheckinPhoto(c)}
+                    className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-rose-500 text-white flex items-center justify-center"
+                    aria-label="Delete photo"
+                  >
+                    <X size={12} strokeWidth={3} />
+                  </button>
+                  <span className={`text-xs ${T.faint} mt-1 block`}>
+                    {new Date(c.created_at).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </>
     );
@@ -904,8 +1330,8 @@ export default function Dashboard({
             <button
               key={key}
               onClick={() => setRankTab(key)}
-              className={`flex-1 py-2 rounded-lg text-sm font-semibold capitalize transition-colors ${
-                rankTab === key ? 'bg-amber-400 text-slate-950' : T.sub
+              className={`flex-1 py-2 rounded-lg text-sm font-semibold capitalize transition-all active:scale-95 ${
+                rankTab === key ? 'bg-violet-400 text-slate-950' : T.sub
               }`}
             >
               {key}
@@ -928,7 +1354,7 @@ export default function Dashboard({
                 <button
                   onClick={searchUsers}
                   disabled={searching}
-                  className="font-disp font-bold text-sm uppercase tracking-wide px-4 py-2 rounded-xl bg-amber-400 text-slate-950 hover:bg-amber-300 transition-colors disabled:opacity-50"
+                  className="font-disp font-bold text-sm uppercase tracking-wide px-4 py-2 rounded-xl bg-violet-400 text-slate-950 hover:bg-violet-300 transition-all active:scale-95 disabled:opacity-50"
                 >
                   Search
                 </button>
@@ -944,10 +1370,11 @@ export default function Dashboard({
                           {u.username?.[0]?.toUpperCase()}
                         </div>
                         <span className="flex-1 text-sm font-medium">{u.username}</span>
+                        <RankBadge level={u.level || 1} />
                         <button
                           onClick={() => sendFriendRequest(u.id)}
                           disabled={alreadyFriend || requested}
-                          className="font-disp font-bold text-xs uppercase tracking-wide px-3 py-1.5 rounded-lg bg-amber-400 text-slate-950 disabled:opacity-50"
+                          className="font-disp font-bold text-xs uppercase tracking-wide px-3 py-1.5 rounded-lg bg-violet-400 text-slate-950 disabled:opacity-50"
                         >
                           {alreadyFriend ? 'Friends' : requested ? 'Requested' : 'Add'}
                         </button>
@@ -998,6 +1425,7 @@ export default function Dashboard({
                       {f.username?.[0]?.toUpperCase()}
                     </div>
                     <span className="flex-1 text-sm font-medium">{f.username}</span>
+                    <RankBadge level={f.level || 1} />
                     <span className={`text-xs font-semibold ${T.sub}`}>{(f.xp || 0).toLocaleString()} XP</span>
                   </div>
                 ))}
@@ -1010,7 +1438,7 @@ export default function Dashboard({
           <div className="space-y-1.5">
             {rankList.map((p, idx) => {
               const medalColor =
-                p.rank === 1 ? 'text-amber-400' : p.rank === 2 ? (dark ? 'text-slate-300' : 'text-slate-400') : p.rank === 3 ? 'text-orange-400' : T.faint;
+                p.rank === 1 ? 'text-violet-400' : p.rank === 2 ? (dark ? 'text-slate-300' : 'text-slate-400') : p.rank === 3 ? 'text-orange-400' : T.faint;
               const prevRank = idx > 0 ? rankList[idx - 1].rank : p.rank;
               const showGap = idx > 0 && p.rank - prevRank > 1;
               return (
@@ -1018,18 +1446,19 @@ export default function Dashboard({
                   {showGap && <div className={`text-center text-xs py-1 ${T.faint}`}>· · ·</div>}
                   <div
                     className={`flex items-center gap-3 rounded-lg px-2 py-2 ${
-                      p.isUser ? 'bg-amber-400 bg-opacity-10 border border-amber-400 border-opacity-30' : ''
+                      p.isUser ? 'bg-violet-400 bg-opacity-10 border border-violet-400 border-opacity-30' : ''
                     }`}
                   >
                     <span className={`font-disp font-bold text-sm w-8 ${medalColor}`}>{p.rank}</span>
                     <div
                       className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-                        p.isUser ? 'bg-amber-400 text-slate-950' : T.track
+                        p.isUser ? 'bg-violet-400 text-slate-950' : T.track
                       }`}
                     >
                       {p.isUser ? username[0]?.toUpperCase() : p.name[0]}
                     </div>
                     <span className={`flex-1 text-sm ${p.isUser ? 'font-semibold' : 'font-medium'}`}>{p.isUser ? username : p.name}</span>
+                    {p.level && <RankBadge level={p.level} />}
                     <span className={`text-xs font-semibold ${T.sub}`}>{p.xp.toLocaleString()} XP</span>
                   </div>
                 </div>
@@ -1056,7 +1485,7 @@ export default function Dashboard({
             <button
               onClick={createGuild}
               disabled={guildBusy || !newGuildName.trim()}
-              className="font-disp font-bold text-sm uppercase tracking-wide px-4 py-2 rounded-xl bg-amber-400 text-slate-950 hover:bg-amber-300 transition-colors disabled:opacity-50"
+              className="font-disp font-bold text-sm uppercase tracking-wide px-4 py-2 rounded-xl bg-violet-400 text-slate-950 hover:bg-violet-300 transition-all active:scale-95 disabled:opacity-50"
             >
               Create
             </button>
@@ -1070,12 +1499,12 @@ export default function Dashboard({
           )}
           {availableGuilds.map((g) => (
             <div key={g.id} className={`flex items-center gap-3 rounded-xl border p-3 ${T.card} ${T.border}`}>
-              <Users size={18} className={A.gold} />
+              <Users size={18} className={A.primary} />
               <span className="flex-1 text-sm font-medium">{g.name}</span>
               <button
                 onClick={() => joinGuild(g.id, g.name)}
                 disabled={guildBusy}
-                className="font-disp font-bold text-xs uppercase tracking-wide px-3 py-1.5 rounded-lg bg-amber-400 text-slate-950 hover:bg-amber-300 transition-colors disabled:opacity-50"
+                className="font-disp font-bold text-xs uppercase tracking-wide px-3 py-1.5 rounded-lg bg-violet-400 text-slate-950 hover:bg-violet-300 transition-all active:scale-95 disabled:opacity-50"
               >
                 Join
               </button>
@@ -1087,37 +1516,13 @@ export default function Dashboard({
       <>
         <div className="flex items-center gap-3 mb-5">
           <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border ${T.card} ${T.border}`}>
-            <Users size={26} className={A.gold} />
+            <Users size={26} className={A.primary} />
           </div>
           <div>
             <h1 className="font-disp font-bold text-2xl">{guildInfo.name}</h1>
             <p className={`text-sm ${T.sub}`}>{guildInfo.roster.length} member{guildInfo.roster.length === 1 ? '' : 's'}</p>
           </div>
         </div>
-
-        {boss ? (
-          <div className={`rounded-2xl border-l-4 border-rose-500 border ${T.card} ${T.border} p-4 mb-6`}>
-            <div className="flex items-center gap-2 mb-2">
-              <Swords size={16} className={A.rose} />
-              <Eyebrow className={A.rose}>Guild Boss Battle</Eyebrow>
-            </div>
-            <div className="flex items-center justify-between mb-1">
-              <h2 className="font-disp font-bold text-xl">{boss.name}</h2>
-              <span className={`text-xs font-semibold ${T.sub}`}>Live</span>
-            </div>
-            <div className={`w-full h-3 rounded-full ${T.track} overflow-hidden mb-1`}>
-              <div
-                className="h-full rounded-full bg-rose-500"
-                style={{ width: `${(boss.current_hp / boss.max_hp) * 100}%`, transition: 'width 500ms ease' }}
-              />
-            </div>
-            <p className={`text-xs ${T.sub}`}>
-              {boss.current_hp.toLocaleString()} / {boss.max_hp.toLocaleString()} HP · Reward: {boss.reward}
-            </p>
-          </div>
-        ) : (
-          <p className={`text-xs ${T.faint} mb-6`}>Boss battle data unavailable — run the boss_battles SQL to enable this.</p>
-        )}
 
         <Eyebrow className={`${T.faint} mb-2`}>Roster</Eyebrow>
         <div className="space-y-1.5 mb-6">
@@ -1127,27 +1532,28 @@ export default function Dashboard({
               <div
                 key={p.userId}
                 className={`flex items-center gap-3 rounded-lg px-2 py-2 ${
-                  isMe ? 'bg-amber-400 bg-opacity-10 border border-amber-400 border-opacity-30' : ''
+                  isMe ? 'bg-violet-400 bg-opacity-10 border border-violet-400 border-opacity-30' : ''
                 }`}
               >
                 <span className={`font-disp font-bold text-sm w-8 ${T.faint}`}>{idx + 1}</span>
                 <div
                   className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-                    isMe ? 'bg-amber-400 text-slate-950' : T.track
+                    isMe ? 'bg-violet-400 text-slate-950' : T.track
                   }`}
                 >
                   {(isMe ? username : p.username || '?')[0]?.toUpperCase()}
                 </div>
                 <span className={`flex-1 text-sm ${isMe ? 'font-semibold' : 'font-medium'}`}>{isMe ? username : p.username}</span>
-                <span className={`text-xs font-semibold ${T.sub}`}>{(p.xp || 0).toLocaleString()} XP</span>
+                <RankBadge level={isMe ? level : p.level || 1} />
+                <span className={`text-xs font-semibold ${T.sub}`}>{(isMe ? xp : p.xp || 0).toLocaleString()} XP</span>
               </div>
             );
           })}
         </div>
 
         <div className="flex items-center gap-2 mb-2">
-          <MessageCircle size={16} className={A.gold} />
-          <Eyebrow className={A.gold}>Guild Chat</Eyebrow>
+          <MessageCircle size={16} className={A.primary} />
+          <Eyebrow className={A.primary}>Guild Chat</Eyebrow>
         </div>
         <div className={`rounded-2xl border ${T.card} ${T.border} p-3 mb-4`}>
           <div className="space-y-3 mb-3 max-h-64 overflow-y-auto">
@@ -1179,7 +1585,7 @@ export default function Dashboard({
             <button
               onClick={sendGuildMessage}
               disabled={chatBusy || !chatInput.trim()}
-              className="rounded-xl px-3 bg-amber-400 text-slate-950 disabled:opacity-50 flex items-center justify-center"
+              className="rounded-xl px-3 bg-violet-400 text-slate-950 disabled:opacity-50 flex items-center justify-center transition-all active:scale-90"
             >
               <Send size={16} />
             </button>
@@ -1189,7 +1595,7 @@ export default function Dashboard({
         <button
           onClick={leaveGuild}
           disabled={guildBusy}
-          className={`w-full flex items-center justify-center gap-2 rounded-xl border p-3 text-sm font-medium ${T.card} ${T.border} ${T.sub} disabled:opacity-50`}
+          className={`w-full flex items-center justify-center gap-2 rounded-xl border p-3 text-sm font-medium transition-all active:scale-95 ${T.card} ${T.border} ${T.sub} disabled:opacity-50`}
         >
           Leave Guild
         </button>
@@ -1198,9 +1604,12 @@ export default function Dashboard({
   } else if (activeTab === 'profile') {
     mainContent = (
       <>
-        <div className="flex items-center gap-4 mb-6">
+        <div className="flex items-center gap-4 mb-4">
           <div className="relative shrink-0">
-            <div className="w-20 h-20 rounded-full bg-amber-400 flex items-center justify-center">
+            <div
+              className="w-20 h-20 rounded-full bg-violet-400 flex items-center justify-center"
+              style={{ boxShadow: `0 0 0 3px ${myRank.color}88` }}
+            >
               <span className="font-disp font-bold text-3xl text-slate-950">{username[0]?.toUpperCase() || 'Y'}</span>
             </div>
             <div
@@ -1208,16 +1617,20 @@ export default function Dashboard({
                 dark ? 'border-slate-950 bg-slate-900' : 'border-slate-50 bg-white'
               }`}
             >
-              <span className="font-disp font-bold text-xs text-amber-400">{level}</span>
+              <span className="font-disp font-bold text-xs text-violet-400">{level}</span>
             </div>
           </div>
           <div>
             <h1 className="font-disp font-bold text-2xl">{username}</h1>
             <div className="flex items-center gap-1 mt-1">
               <Flame size={14} className={A.ember} />
-              <span className={`text-sm ${T.sub}`}>{initialStreak} day streak</span>
+              <span className={`text-sm ${T.sub}`}>{streak} day streak</span>
             </div>
           </div>
+        </div>
+
+        <div className="mb-6">
+          <RankBadge level={level} size="lg" />
         </div>
 
         <div className="grid grid-cols-2 gap-3 mb-6">
@@ -1235,8 +1648,8 @@ export default function Dashboard({
             <button
               key={s}
               onClick={() => changeSplit(s)}
-              className={`rounded-xl border px-3 py-2 text-sm font-medium text-left transition-colors ${
-                split === s ? 'bg-amber-400 text-slate-950 border-amber-400' : `${T.card} ${T.border} ${T.text}`
+              className={`rounded-xl border px-3 py-2 text-sm font-medium text-left transition-all active:scale-95 ${
+                split === s ? 'bg-violet-400 text-slate-950 border-violet-400' : `${T.card} ${T.border} ${T.text}`
               }`}
             >
               {s}
@@ -1244,24 +1657,9 @@ export default function Dashboard({
           ))}
         </div>
 
-        <Eyebrow className={`${T.faint} mb-2`}>Badges</Eyebrow>
-        <div className="grid grid-cols-3 gap-3 mb-6">
-          {BADGES.map((b) => (
-            <div
-              key={b.id}
-              className={`flex flex-col items-center gap-2 rounded-xl border p-3 ${T.card} ${T.border} ${!b.unlocked ? 'opacity-40' : ''}`}
-            >
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center ${b.unlocked ? 'bg-amber-400 bg-opacity-10' : T.track}`}>
-                {b.unlocked ? <b.Icon size={22} className={A.gold} /> : <Lock size={18} className={T.faint} />}
-              </div>
-              <span className={`text-xs text-center font-medium ${b.unlocked ? T.text : T.faint}`}>{b.label}</span>
-            </div>
-          ))}
-        </div>
-
         <button
           onClick={onSignOut}
-          className={`w-full flex items-center gap-3 rounded-xl border p-3 ${T.card} ${T.border}`}
+          className={`w-full flex items-center gap-3 rounded-xl border p-3 transition-all active:scale-95 ${T.card} ${T.border}`}
         >
           <Settings size={18} className={T.sub} />
           <span className={`flex-1 text-left text-sm font-medium ${T.text}`}>Sign Out</span>
@@ -1282,20 +1680,24 @@ export default function Dashboard({
         .toast-anim { animation: floatUp 1.5s ease forwards; }
         @keyframes confettiFall { 0%{ transform: translateY(0) rotate(0deg); opacity:1;} 100%{ transform: translateY(110vh) rotate(540deg); opacity:0;} }
         .confetti-piece { animation-name: confettiFall; animation-timing-function: ease-in; animation-fill-mode: forwards; }
+        @keyframes fadeIn { 0%{ opacity:0; transform: translateY(6px);} 100%{ opacity:1; transform: translateY(0);} }
+        .tab-fade { animation: fadeIn 280ms ease; }
+        @keyframes eliteGlow { 0%,100%{ box-shadow: 0 0 6px rgba(244,63,94,0.4);} 50%{ box-shadow: 0 0 14px rgba(244,63,94,0.8);} }
+        .elite-glow { animation: eliteGlow 2s ease-in-out infinite; }
       `}</style>
 
       <div className={`font-body relative w-full max-w-md ${T.bg} ${T.text} min-h-screen sm:min-h-0 sm:my-6 sm:rounded-3xl sm:shadow-2xl overflow-hidden`}>
 
         <div
           className="absolute top-0 left-0 right-0 h-56 pointer-events-none"
-          style={{ background: dark ? 'radial-gradient(60% 100% at 50% 0%, rgba(251,191,36,0.10), transparent)' : 'radial-gradient(60% 100% at 50% 0%, rgba(251,191,36,0.15), transparent)' }}
+          style={{ background: dark ? 'radial-gradient(60% 100% at 50% 0%, rgba(167,139,250,0.12), transparent)' : 'radial-gradient(60% 100% at 50% 0%, rgba(167,139,250,0.16), transparent)' }}
         />
 
         {toast && (
           <div
             key={toast + Date.now()}
-            className={`toast-anim fixed top-5 left-1/2 z-50 px-4 py-2 rounded-full font-disp font-bold text-sm tracking-wide border ${dark ? 'bg-amber-400 text-slate-950 border-amber-300' : 'bg-amber-500 text-white border-amber-400'}`}
-            style={{ boxShadow: '0 6px 24px rgba(251,191,36,0.4)' }}
+            className={`toast-anim fixed top-5 left-1/2 z-50 px-4 py-2 rounded-full font-disp font-bold text-sm tracking-wide border ${dark ? 'bg-violet-400 text-slate-950 border-violet-300' : 'bg-violet-500 text-white border-violet-400'}`}
+            style={{ boxShadow: '0 6px 24px rgba(167,139,250,0.5)' }}
           >
             {toast}
           </div>
@@ -1303,16 +1705,16 @@ export default function Dashboard({
 
         <Confetti active={confettiActive} />
 
-        <div className="relative px-5 pt-5 pb-28">{mainContent}</div>
+        <div key={activeTab} className="relative px-5 pt-5 pb-28 tab-fade">{mainContent}</div>
 
         <div className="fixed bottom-0 left-1/2 -translate-x-1/2 w-full max-w-md z-40">
           <div className={`flex items-center justify-around border-t px-2 py-2.5 ${T.card} ${T.border} sm:rounded-b-3xl`}>
             {NAV.map(({ key, label, Icon }) => {
               const active = activeTab === key;
               return (
-                <button key={key} onClick={() => setActiveTab(key)} className="flex flex-col items-center gap-1 px-2 py-1">
-                  <Icon size={20} className={active ? 'text-amber-400' : T.faint} strokeWidth={active ? 2.5 : 2} />
-                  <span className={`text-xs font-medium ${active ? 'text-amber-400' : T.faint}`}>{label}</span>
+                <button key={key} onClick={() => setActiveTab(key)} className="flex flex-col items-center gap-1 px-2 py-1 transition-all active:scale-90">
+                  <Icon size={20} className={active ? 'text-violet-400' : T.faint} strokeWidth={active ? 2.5 : 2} />
+                  <span className={`text-xs font-medium ${active ? 'text-violet-400' : T.faint}`}>{label}</span>
                 </button>
               );
             })}
