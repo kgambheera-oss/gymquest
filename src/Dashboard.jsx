@@ -17,13 +17,6 @@ const STATS = [
   { key: 'STAM', label: 'Stamina', value: 60 },
 ];
 
-const LEADERBOARD = [
-  { rank: 1, name: 'Jordan', xp: 4820 },
-  { rank: 2, name: 'Sam', xp: 4510 },
-  { rank: 3, name: 'Taylor', xp: 3990 },
-];
-const YOU = { rank: 7, name: 'You', xp: 2340, delta: 2 };
-
 const WEEKLY_QUESTS = [
   { id: 101, title: 'Complete 4 workouts', xp: 200, progress: 3, target: 4 },
   { id: 102, title: 'Log a new personal record', xp: 150, progress: 0, target: 1 },
@@ -37,16 +30,6 @@ const ACTIVITY = [
 ];
 
 const RANKS_DATA = {
-  friends: [
-    { rank: 1, name: 'Jordan', xp: 4820 },
-    { rank: 2, name: 'Sam', xp: 4510 },
-    { rank: 3, name: 'Taylor', xp: 3990 },
-    { rank: 4, name: 'Morgan', xp: 3210 },
-    { rank: 5, name: 'Casey', xp: 2890 },
-    { rank: 6, name: 'Riley', xp: 2615 },
-    { rank: 7, name: 'You', xp: 2340, isUser: true },
-    { rank: 8, name: 'Avery', xp: 2100 },
-  ],
   guild: [
     { rank: 1, name: 'Blaze', xp: 9120 },
     { rank: 2, name: 'Nova', xp: 8340 },
@@ -95,7 +78,7 @@ function getQuestIcon(title) {
   return QUEST_ICONS[title] || Target;
 }
 
-const XP_PER_LEVEL = 50;
+const XP_PER_LEVEL = 3000;
 
 /* --------------------------- pentagon geometry helpers -------------------------- */
 
@@ -269,6 +252,11 @@ export default function Dashboard({
   username = 'You',
   initialQuests = [],
   initialBoss = null,
+  initialGuild = null,
+  initialAvailableGuilds = [],
+  initialFriends = [],
+  initialFriendRequests = [],
+  initialOutgoingIds = [],
   onSignOut,
 }) {
   const [dark, setDark] = useState(true);
@@ -281,6 +269,16 @@ export default function Dashboard({
   const [toast, setToast] = useState(null);
   const [confettiActive, setConfettiActive] = useState(false);
   const [uploadingId, setUploadingId] = useState(null);
+  const [guildInfo, setGuildInfo] = useState(initialGuild);
+  const [availableGuilds, setAvailableGuilds] = useState(initialAvailableGuilds);
+  const [newGuildName, setNewGuildName] = useState('');
+  const [guildBusy, setGuildBusy] = useState(false);
+  const [friends, setFriends] = useState(initialFriends);
+  const [friendRequests, setFriendRequests] = useState(initialFriendRequests);
+  const [pendingOutgoingIds, setPendingOutgoingIds] = useState(initialOutgoingIds);
+  const [friendSearch, setFriendSearch] = useState('');
+  const [searchResults, setSearchResults] = useState([]);
+  const [searching, setSearching] = useState(false);
   const toastTimer = useRef(null);
 
   const T = dark
@@ -401,6 +399,94 @@ export default function Dashboard({
     setUploadingId(null);
   };
 
+  const fetchRoster = async (guildId) => {
+    const { data: rosterRows } = await supabase
+      .from('guild_members')
+      .select('user_id, profiles ( username, level, xp )')
+      .eq('guild_id', guildId);
+    return (rosterRows || [])
+      .map((r) => ({ userId: r.user_id, username: r.profiles?.username, level: r.profiles?.level, xp: r.profiles?.xp || 0 }))
+      .sort((a, b) => b.xp - a.xp);
+  };
+
+  const joinGuild = async (guildId, guildName) => {
+    setGuildBusy(true);
+    const { error } = await supabase.from('guild_members').insert({ guild_id: guildId, user_id: userId });
+    if (error) {
+      fireToast('Could not join guild');
+      setGuildBusy(false);
+      return;
+    }
+    const roster = await fetchRoster(guildId);
+    setGuildInfo({ id: guildId, name: guildName, roster });
+    setGuildBusy(false);
+    fireToast('Joined guild!');
+  };
+
+  const createGuild = async () => {
+    if (!newGuildName.trim()) return;
+    setGuildBusy(true);
+    const { data, error } = await supabase.from('guilds').insert({ name: newGuildName.trim() }).select().single();
+    if (error || !data) {
+      fireToast('Could not create guild');
+      setGuildBusy(false);
+      return;
+    }
+    setNewGuildName('');
+    await joinGuild(data.id, data.name);
+  };
+
+  const leaveGuild = async () => {
+    if (!guildInfo) return;
+    setGuildBusy(true);
+    await supabase.from('guild_members').delete().eq('guild_id', guildInfo.id).eq('user_id', userId);
+    setGuildInfo(null);
+    const { data: guildsList } = await supabase.from('guilds').select('id, name');
+    setAvailableGuilds(guildsList || []);
+    setGuildBusy(false);
+  };
+
+  const searchUsers = async () => {
+    const q = friendSearch.trim();
+    if (!q) {
+      setSearchResults([]);
+      return;
+    }
+    setSearching(true);
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, username')
+      .ilike('username', `%${q}%`)
+      .neq('id', userId)
+      .limit(10);
+    setSearchResults(data || []);
+    setSearching(false);
+  };
+
+  const sendFriendRequest = async (targetId) => {
+    const { error } = await supabase.from('friendships').insert({ requester_id: userId, addressee_id: targetId, status: 'pending' });
+    if (error) {
+      fireToast('Could not send request');
+      return;
+    }
+    setPendingOutgoingIds((prev) => [...prev, targetId]);
+    fireToast('Friend request sent');
+  };
+
+  const acceptFriendRequest = async (request) => {
+    await supabase.from('friendships').update({ status: 'accepted' }).eq('id', request.friendshipId);
+    setFriendRequests((prev) => prev.filter((r) => r.friendshipId !== request.friendshipId));
+    setFriends((prev) =>
+      [...prev, { userId: request.userId, username: request.username, xp: request.xp, level: request.level }].sort((a, b) => b.xp - a.xp)
+    );
+    fireToast('Friend added!');
+  };
+
+  const declineFriendRequest = async (friendshipId) => {
+    await supabase.from('friendships').delete().eq('id', friendshipId);
+    setFriendRequests((prev) => prev.filter((r) => r.friendshipId !== friendshipId));
+  };
+
   const heroQuest = quests.find((q) => q.kind === 'hero');
   const sideQuests = quests.filter((q) => q.kind !== 'hero');
   const totalToday = quests.length || 1;
@@ -415,7 +501,18 @@ export default function Dashboard({
   const statVerts = STATS.map((s, i) => pointAt(i, STATS.length, (R * s.value) / 100));
   const axisEnds = STATS.map((_, i) => pointAt(i, STATS.length, R));
   const labelPts = STATS.map((_, i) => pointAt(i, STATS.length, R + 28));
-  const rankList = RANKS_DATA[rankTab];
+  const rankList =
+    rankTab === 'guild'
+      ? guildInfo
+        ? guildInfo.roster.map((p, idx) => ({
+            rank: idx + 1,
+            name: p.userId === userId ? username : p.username,
+            xp: p.xp,
+            isUser: p.userId === userId,
+          }))
+        : []
+      : RANKS_DATA[rankTab];
+  const friendBoard = [...friends, { userId, username, xp }].sort((a, b) => b.xp - a.xp);
 
   let mainContent = null;
 
@@ -549,26 +646,28 @@ export default function Dashboard({
               See all <ChevronRight size={12} />
             </span>
           </div>
-          <div className="space-y-2">
-            {LEADERBOARD.map((p) => (
-              <div key={p.rank} className="flex items-center gap-3">
-                <span className={`font-disp font-bold text-sm w-5 ${T.faint}`}>{p.rank}</span>
-                <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${T.track}`}>
-                  {p.name[0]}
-                </div>
-                <span className="flex-1 text-sm font-medium">{p.name}</span>
-                <span className={`text-xs font-semibold ${T.sub}`}>{p.xp.toLocaleString()} XP</span>
-              </div>
-            ))}
-            <div className={`flex items-center gap-3 rounded-lg -mx-1 px-1 py-1 bg-amber-400 bg-opacity-10 border border-amber-400 border-opacity-30`}>
-              <span className="font-disp font-bold text-sm w-5 text-amber-400">{YOU.rank}</span>
-              <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold bg-amber-400 text-slate-950">
-                Y
-              </div>
-              <span className="flex-1 text-sm font-semibold">{username}</span>
-              <span className="text-xs font-semibold text-emerald-400">▲{YOU.delta} · {xp.toLocaleString()} XP</span>
+          {friendBoard.length <= 1 ? (
+            <p className={`text-xs ${T.faint}`}>No friends yet — add some from the Ranks tab.</p>
+          ) : (
+            <div className="space-y-2">
+              {friendBoard.slice(0, 5).map((p, idx) => {
+                const isMe = p.userId === userId;
+                return (
+                  <div
+                    key={p.userId}
+                    className={`flex items-center gap-3 rounded-lg ${isMe ? '-mx-1 px-1 py-1 bg-amber-400 bg-opacity-10 border border-amber-400 border-opacity-30' : ''}`}
+                  >
+                    <span className={`font-disp font-bold text-sm w-5 ${isMe ? 'text-amber-400' : T.faint}`}>{idx + 1}</span>
+                    <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${isMe ? 'bg-amber-400 text-slate-950' : T.track}`}>
+                      {p.username?.[0]?.toUpperCase()}
+                    </div>
+                    <span className={`flex-1 text-sm ${isMe ? 'font-semibold' : 'font-medium'}`}>{p.username}</span>
+                    <span className={`text-xs font-semibold ${isMe ? 'text-emerald-400' : T.sub}`}>{(p.xp || 0).toLocaleString()} XP</span>
+                  </div>
+                );
+              })}
             </div>
-          </div>
+          )}
         </div>
 
         {/* ---------- friend activity ---------- */}
@@ -663,47 +762,186 @@ export default function Dashboard({
             </button>
           ))}
         </div>
-        <div className="space-y-1.5">
-          {rankList.map((p, idx) => {
-            const medalColor =
-              p.rank === 1 ? 'text-amber-400' : p.rank === 2 ? (dark ? 'text-slate-300' : 'text-slate-400') : p.rank === 3 ? 'text-orange-400' : T.faint;
-            const prevRank = idx > 0 ? rankList[idx - 1].rank : p.rank;
-            const showGap = idx > 0 && p.rank - prevRank > 1;
-            return (
-              <div key={`${rankTab}-${p.rank}-${p.name}`}>
-                {showGap && <div className={`text-center text-xs py-1 ${T.faint}`}>· · ·</div>}
-                <div
-                  className={`flex items-center gap-3 rounded-lg px-2 py-2 ${
-                    p.isUser ? 'bg-amber-400 bg-opacity-10 border border-amber-400 border-opacity-30' : ''
-                  }`}
+
+        {rankTab === 'friends' ? (
+          <>
+            <div className={`rounded-2xl border ${T.card} ${T.border} p-4 mb-4`}>
+              <Eyebrow className={`${T.faint} mb-2`}>Add Friends</Eyebrow>
+              <div className="flex gap-2">
+                <input
+                  value={friendSearch}
+                  onChange={(e) => setFriendSearch(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && searchUsers()}
+                  placeholder="Search by username"
+                  className={`flex-1 rounded-xl border px-3 py-2 text-sm outline-none ${T.card} ${T.border} ${T.text}`}
+                />
+                <button
+                  onClick={searchUsers}
+                  disabled={searching}
+                  className="font-disp font-bold text-sm uppercase tracking-wide px-4 py-2 rounded-xl bg-amber-400 text-slate-950 hover:bg-amber-300 transition-colors disabled:opacity-50"
                 >
-                  <span className={`font-disp font-bold text-sm w-8 ${medalColor}`}>{p.rank}</span>
+                  Search
+                </button>
+              </div>
+              {searchResults.length > 0 && (
+                <div className="space-y-2 mt-3">
+                  {searchResults.map((u) => {
+                    const alreadyFriend = friends.some((f) => f.userId === u.id);
+                    const requested = pendingOutgoingIds.includes(u.id);
+                    return (
+                      <div key={u.id} className="flex items-center gap-3">
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${T.track}`}>
+                          {u.username?.[0]?.toUpperCase()}
+                        </div>
+                        <span className="flex-1 text-sm font-medium">{u.username}</span>
+                        <button
+                          onClick={() => sendFriendRequest(u.id)}
+                          disabled={alreadyFriend || requested}
+                          className="font-disp font-bold text-xs uppercase tracking-wide px-3 py-1.5 rounded-lg bg-amber-400 text-slate-950 disabled:opacity-50"
+                        >
+                          {alreadyFriend ? 'Friends' : requested ? 'Requested' : 'Add'}
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+
+            {friendRequests.length > 0 && (
+              <>
+                <Eyebrow className={`${T.faint} mb-2`}>Requests</Eyebrow>
+                <div className="space-y-2 mb-4">
+                  {friendRequests.map((r) => (
+                    <div key={r.friendshipId} className={`flex items-center gap-3 rounded-xl border p-3 ${T.card} ${T.border}`}>
+                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${T.track}`}>
+                        {r.username?.[0]?.toUpperCase()}
+                      </div>
+                      <span className="flex-1 text-sm font-medium">{r.username}</span>
+                      <button
+                        onClick={() => acceptFriendRequest(r)}
+                        className="font-disp font-bold text-xs uppercase tracking-wide px-3 py-1.5 rounded-lg bg-emerald-500 text-slate-950 mr-1.5"
+                      >
+                        Accept
+                      </button>
+                      <button
+                        onClick={() => declineFriendRequest(r.friendshipId)}
+                        className={`font-disp font-bold text-xs uppercase tracking-wide px-3 py-1.5 rounded-lg ${T.track} ${T.sub}`}
+                      >
+                        Decline
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            <Eyebrow className={`${T.faint} mb-2`}>Your Friends</Eyebrow>
+            {friends.length === 0 ? (
+              <p className={`text-sm ${T.faint}`}>No friends yet — search above to add some.</p>
+            ) : (
+              <div className="space-y-1.5">
+                {friends.map((f, idx) => (
+                  <div key={f.userId} className="flex items-center gap-3">
+                    <span className={`font-disp font-bold text-sm w-8 ${T.faint}`}>{idx + 1}</span>
+                    <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${T.track}`}>
+                      {f.username?.[0]?.toUpperCase()}
+                    </div>
+                    <span className="flex-1 text-sm font-medium">{f.username}</span>
+                    <span className={`text-xs font-semibold ${T.sub}`}>{(f.xp || 0).toLocaleString()} XP</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </>
+        ) : rankTab === 'guild' && !guildInfo ? (
+          <p className={`text-sm ${T.faint}`}>You haven't joined a guild yet — head to the Guild tab to create or join one.</p>
+        ) : (
+          <div className="space-y-1.5">
+            {rankList.map((p, idx) => {
+              const medalColor =
+                p.rank === 1 ? 'text-amber-400' : p.rank === 2 ? (dark ? 'text-slate-300' : 'text-slate-400') : p.rank === 3 ? 'text-orange-400' : T.faint;
+              const prevRank = idx > 0 ? rankList[idx - 1].rank : p.rank;
+              const showGap = idx > 0 && p.rank - prevRank > 1;
+              return (
+                <div key={`${rankTab}-${p.rank}-${p.name}`}>
+                  {showGap && <div className={`text-center text-xs py-1 ${T.faint}`}>· · ·</div>}
                   <div
-                    className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-                      p.isUser ? 'bg-amber-400 text-slate-950' : T.track
+                    className={`flex items-center gap-3 rounded-lg px-2 py-2 ${
+                      p.isUser ? 'bg-amber-400 bg-opacity-10 border border-amber-400 border-opacity-30' : ''
                     }`}
                   >
-                    {p.isUser ? username[0]?.toUpperCase() : p.name[0]}
+                    <span className={`font-disp font-bold text-sm w-8 ${medalColor}`}>{p.rank}</span>
+                    <div
+                      className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
+                        p.isUser ? 'bg-amber-400 text-slate-950' : T.track
+                      }`}
+                    >
+                      {p.isUser ? username[0]?.toUpperCase() : p.name[0]}
+                    </div>
+                    <span className={`flex-1 text-sm ${p.isUser ? 'font-semibold' : 'font-medium'}`}>{p.isUser ? username : p.name}</span>
+                    <span className={`text-xs font-semibold ${T.sub}`}>{p.xp.toLocaleString()} XP</span>
                   </div>
-                  <span className={`flex-1 text-sm ${p.isUser ? 'font-semibold' : 'font-medium'}`}>{p.isUser ? username : p.name}</span>
-                  <span className={`text-xs font-semibold ${T.sub}`}>{p.xp.toLocaleString()} XP</span>
                 </div>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </>
     );
   } else if (activeTab === 'guild') {
-    mainContent = (
+    mainContent = !guildInfo ? (
+      <>
+        <h1 className="font-disp font-bold text-2xl mb-4">Find a Guild</h1>
+
+        <div className={`rounded-2xl border ${T.card} ${T.border} p-4 mb-6`}>
+          <Eyebrow className={`${T.faint} mb-2`}>Start Your Own</Eyebrow>
+          <div className="flex gap-2">
+            <input
+              value={newGuildName}
+              onChange={(e) => setNewGuildName(e.target.value)}
+              placeholder="Guild name"
+              className={`flex-1 rounded-xl border px-3 py-2 text-sm outline-none ${T.card} ${T.border} ${T.text}`}
+            />
+            <button
+              onClick={createGuild}
+              disabled={guildBusy || !newGuildName.trim()}
+              className="font-disp font-bold text-sm uppercase tracking-wide px-4 py-2 rounded-xl bg-amber-400 text-slate-950 hover:bg-amber-300 transition-colors disabled:opacity-50"
+            >
+              Create
+            </button>
+          </div>
+        </div>
+
+        <Eyebrow className={`${T.faint} mb-2`}>Or Join One</Eyebrow>
+        <div className="space-y-2">
+          {availableGuilds.length === 0 && (
+            <p className={`text-sm ${T.faint}`}>No guilds exist yet — be the first to create one.</p>
+          )}
+          {availableGuilds.map((g) => (
+            <div key={g.id} className={`flex items-center gap-3 rounded-xl border p-3 ${T.card} ${T.border}`}>
+              <Users size={18} className={A.gold} />
+              <span className="flex-1 text-sm font-medium">{g.name}</span>
+              <button
+                onClick={() => joinGuild(g.id, g.name)}
+                disabled={guildBusy}
+                className="font-disp font-bold text-xs uppercase tracking-wide px-3 py-1.5 rounded-lg bg-amber-400 text-slate-950 hover:bg-amber-300 transition-colors disabled:opacity-50"
+              >
+                Join
+              </button>
+            </div>
+          ))}
+        </div>
+      </>
+    ) : (
       <>
         <div className="flex items-center gap-3 mb-5">
           <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border ${T.card} ${T.border}`}>
             <Users size={26} className={A.gold} />
           </div>
           <div>
-            <h1 className="font-disp font-bold text-2xl">Iron Wolves</h1>
-            <p className={`text-sm ${T.sub}`}>24 members · Guild Level 8</p>
+            <h1 className="font-disp font-bold text-2xl">{guildInfo.name}</h1>
+            <p className={`text-sm ${T.sub}`}>{guildInfo.roster.length} member{guildInfo.roster.length === 1 ? '' : 's'}</p>
           </div>
         </div>
 
@@ -732,27 +970,38 @@ export default function Dashboard({
         )}
 
         <Eyebrow className={`${T.faint} mb-2`}>Roster</Eyebrow>
-        <div className="space-y-1.5">
-          {RANKS_DATA.guild.map((p) => (
-            <div
-              key={p.rank}
-              className={`flex items-center gap-3 rounded-lg px-2 py-2 ${
-                p.isUser ? 'bg-amber-400 bg-opacity-10 border border-amber-400 border-opacity-30' : ''
-              }`}
-            >
-              <span className={`font-disp font-bold text-sm w-8 ${T.faint}`}>{p.rank}</span>
+        <div className="space-y-1.5 mb-6">
+          {guildInfo.roster.map((p, idx) => {
+            const isMe = p.userId === userId;
+            return (
               <div
-                className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
-                  p.isUser ? 'bg-amber-400 text-slate-950' : T.track
+                key={p.userId}
+                className={`flex items-center gap-3 rounded-lg px-2 py-2 ${
+                  isMe ? 'bg-amber-400 bg-opacity-10 border border-amber-400 border-opacity-30' : ''
                 }`}
               >
-                {p.isUser ? username[0]?.toUpperCase() : p.name[0]}
+                <span className={`font-disp font-bold text-sm w-8 ${T.faint}`}>{idx + 1}</span>
+                <div
+                  className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold ${
+                    isMe ? 'bg-amber-400 text-slate-950' : T.track
+                  }`}
+                >
+                  {(isMe ? username : p.username || '?')[0]?.toUpperCase()}
+                </div>
+                <span className={`flex-1 text-sm ${isMe ? 'font-semibold' : 'font-medium'}`}>{isMe ? username : p.username}</span>
+                <span className={`text-xs font-semibold ${T.sub}`}>{(p.xp || 0).toLocaleString()} XP</span>
               </div>
-              <span className={`flex-1 text-sm ${p.isUser ? 'font-semibold' : 'font-medium'}`}>{p.isUser ? username : p.name}</span>
-              <span className={`text-xs font-semibold ${T.sub}`}>{p.xp.toLocaleString()} XP</span>
-            </div>
-          ))}
+            );
+          })}
         </div>
+
+        <button
+          onClick={leaveGuild}
+          disabled={guildBusy}
+          className={`w-full flex items-center justify-center gap-2 rounded-xl border p-3 text-sm font-medium ${T.card} ${T.border} ${T.sub} disabled:opacity-50`}
+        >
+          Leave Guild
+        </button>
       </>
     );
   } else if (activeTab === 'profile') {
