@@ -1,0 +1,64 @@
+name: iOS Build & Preview
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+jobs:
+  build-ios:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Show Xcode version
+        run: xcodebuild -version
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install web app dependencies
+        run: npm install
+
+      - name: Build the web app
+        run: npm run build
+
+      - name: Install Capacitor
+        run: npm install @capacitor/core @capacitor/cli @capacitor/ios
+
+      - name: Add and sync the iOS project
+        run: |
+          npx cap add ios
+          npx cap sync ios
+
+      - name: List available simulators
+        run: xcrun simctl list devices available
+
+      - name: Build for iOS Simulator
+        run: |
+          xcodebuild -workspace ios/App/App.xcworkspace \
+            -scheme App \
+            -sdk iphonesimulator \
+            -derivedDataPath build \
+            build
+
+      - name: Boot simulator, install app, and take a screenshot
+        run: |
+          DEVICE_ID=$(xcrun simctl list devices available | grep -m1 "iPhone" | grep -oE '[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}')
+          echo "Using simulator: $DEVICE_ID"
+          xcrun simctl boot "$DEVICE_ID"
+          sleep 15
+          APP_PATH=$(find build -name "App.app" -path "*iphonesimulator*" | head -1)
+          echo "App path: $APP_PATH"
+          xcrun simctl install "$DEVICE_ID" "$APP_PATH"
+          xcrun simctl launch "$DEVICE_ID" com.gymquest.app
+          sleep 8
+          xcrun simctl io "$DEVICE_ID" screenshot screenshot.png
+
+      - name: Upload screenshot as a downloadable artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: gymquest-ios-screenshot
+          path: screenshot.png
