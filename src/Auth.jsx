@@ -9,6 +9,24 @@ export default function Auth() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [message, setMessage] = useState('');
+  const [resetting, setResetting] = useState(false);
+
+  const handleForgotPassword = async () => {
+    if (!email) {
+      setError('Type your email in the field above first, then tap "Forgot password?"');
+      return;
+    }
+    setError('');
+    setMessage('');
+    setResetting(true);
+    const { error } = await supabase.auth.resetPasswordForEmail(email);
+    setResetting(false);
+    if (error) {
+      setError(error.message);
+    } else {
+      setMessage('Sent! Check that inbox (and spam folder) for a reset link.');
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -39,7 +57,7 @@ export default function Auth() {
       `}</style>
       <div className="font-body w-full max-w-sm">
         <div className="flex flex-col items-center mb-8">
-          <div className="w-14 h-14 rounded-2xl bg-amber-400 flex items-center justify-center mb-3">
+          <div className="w-14 h-14 rounded-2xl bg-violet-400 flex items-center justify-center mb-3">
             <Zap size={28} className="text-slate-950" strokeWidth={2.5} fill="currentColor" />
           </div>
           <h1 className="font-disp font-bold text-2xl text-slate-50">GymQuest</h1>
@@ -55,7 +73,7 @@ export default function Auth() {
             placeholder="Email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
-            className="w-full rounded-xl border border-slate-800 bg-slate-900 text-slate-50 placeholder-slate-500 px-4 py-3 text-sm outline-none focus:border-amber-400"
+            className="w-full rounded-xl border border-slate-800 bg-slate-900 text-slate-50 placeholder-slate-500 px-4 py-3 text-sm outline-none focus:border-violet-400"
           />
           <input
             type="password"
@@ -64,16 +82,27 @@ export default function Auth() {
             placeholder="Password (6+ characters)"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
-            className="w-full rounded-xl border border-slate-800 bg-slate-900 text-slate-50 placeholder-slate-500 px-4 py-3 text-sm outline-none focus:border-amber-400"
+            className="w-full rounded-xl border border-slate-800 bg-slate-900 text-slate-50 placeholder-slate-500 px-4 py-3 text-sm outline-none focus:border-violet-400"
           />
 
           {error && <p className="text-sm text-rose-400">{error}</p>}
           {message && <p className="text-sm text-emerald-400">{message}</p>}
 
+          {mode === 'login' && (
+            <button
+              type="button"
+              onClick={handleForgotPassword}
+              disabled={resetting}
+              className="text-xs text-slate-400 hover:text-violet-400 underline disabled:opacity-50"
+            >
+              {resetting ? 'Sending reset link…' : 'Forgot password?'}
+            </button>
+          )}
+
           <button
             type="submit"
             disabled={loading}
-            className="w-full font-disp font-bold uppercase tracking-wide text-sm bg-amber-400 text-slate-950 rounded-xl py-3 hover:bg-amber-300 transition-colors disabled:opacity-50"
+            className="w-full font-disp font-bold uppercase tracking-wide text-sm bg-violet-400 text-slate-950 rounded-xl py-3 hover:bg-violet-300 transition-colors disabled:opacity-50"
           >
             {loading ? 'Please wait…' : mode === 'login' ? 'Log In' : 'Sign Up'}
           </button>
@@ -87,7 +116,7 @@ export default function Auth() {
               setError('');
               setMessage('');
             }}
-            className="text-amber-400 font-semibold"
+            className="text-violet-400 font-semibold"
           >
             {mode === 'login' ? 'Sign up' : 'Log in'}
           </button>

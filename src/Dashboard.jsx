@@ -10,28 +10,6 @@ import {
 
 /* ---------------------------------- mock data (not yet wired to the DB) ---------------------------------- */
 
-const WEEKLY_QUESTS = [
-  { id: 101, title: 'Complete 4 workouts', xp: 200, progress: 3, target: 4 },
-  { id: 102, title: 'Log a new personal record', xp: 150, progress: 0, target: 1 },
-  { id: 103, title: 'Log 20 total sets', xp: 100, progress: 14, target: 20 },
-];
-
-const RANKS_DATA = {
-  guild: [
-    { rank: 1, name: 'Blaze', xp: 9120 },
-    { rank: 2, name: 'Nova', xp: 8340 },
-    { rank: 3, name: 'Jordan', xp: 4820 },
-    { rank: 4, name: 'Sam', xp: 4510 },
-    { rank: 5, name: 'You', xp: 2340, isUser: true },
-  ],
-  global: [
-    { rank: 1, name: 'IronPhoenix', xp: 48200 },
-    { rank: 2, name: 'ShredKing', xp: 44100 },
-    { rank: 3, name: 'QuestMaster', xp: 41500 },
-    { rank: 1042, name: 'You', xp: 2340, isUser: true },
-  ],
-};
-
 const NAV = [
   { key: 'home', label: 'Home', Icon: Home },
   { key: 'quests', label: 'Quests', Icon: Target },
@@ -98,6 +76,22 @@ function formatMemberSince(dateStr) {
   if (!dateStr) return '—';
   return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 }
+
+function generateJoinCode() {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let code = '';
+  for (let i = 0; i < 6; i++) code += chars[Math.floor(Math.random() * chars.length)];
+  return code;
+}
+
+const BATTLE_CHALLENGE_POOL = [
+  { title: 'Everyone: log a workout in the next 2 hours', hours: 2, multiplier: 2 },
+  { title: 'Drop and give 20 push-ups — post proof', hours: 1, multiplier: 2 },
+  { title: 'Log a new personal record before time runs out', hours: 6, multiplier: 3 },
+  { title: 'Get a cardio session in before it expires', hours: 4, multiplier: 2 },
+  { title: 'Post a gym check-in photo', hours: 3, multiplier: 2 },
+  { title: 'Hold a 60-second plank — prove it', hours: 2, multiplier: 2 },
+];
 
 /* ------------------------------- rank tiers (replaces boss battles) --------------------- */
 
@@ -402,7 +396,7 @@ function HeroQuestCard({ quest, onComplete, T, A, dark, compact, eyebrowText, su
 function QuestRow({ quest, onToggle, onPhotoChange, uploading, T }) {
   const Icon = getQuestIcon(quest.title);
   const needsPhoto = quest.title === 'Gym photo check-in';
-  const rowClass = `w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-all active:scale-[0.98] ${T.card} ${T.border}`;
+  const rowClass = `w-full flex items-center gap-3 rounded-xl border p-3 text-left transition-all active:scale-95 ${T.card} ${T.border}`;
 
   const inner = (
     <>
@@ -456,7 +450,7 @@ export default function Dashboard({
   initialLongestStreak = 0,
   initialWorkoutCount = 0,
   createdAt = null,
-  username = 'You',
+  initialUsername = 'You',
   initialSplit = 'Push/Pull/Legs',
   initialSplitDayIndex = 0,
   initialQuests = [],
@@ -471,9 +465,17 @@ export default function Dashboard({
   initialCompletedDates = [],
   initialWeeklyStats = { workoutsThisWeek: 0, xpThisWeek: 0, completionRate: 0, liftsThisWeek: 0 },
   initialCheckinPhotos = [],
+  initialGlobalLeaderboard = [],
+  initialBattleWinCount = 0,
   onSignOut,
 }) {
   const [dark, setDark] = useState(true);
+  const [username, setUsername] = useState(initialUsername);
+  const [usernameInput, setUsernameInput] = useState(initialUsername);
+  const [editingUsername, setEditingUsername] = useState(false);
+  const [usernameBusy, setUsernameBusy] = useState(false);
+  const [globalLeaderboard] = useState(initialGlobalLeaderboard);
+  const [battleWinCount] = useState(initialBattleWinCount);
   const [quests, setQuests] = useState(initialQuests);
   const [xp, setXp] = useState(initialXp);
   const [level, setLevel] = useState(initialLevel);
@@ -490,7 +492,14 @@ export default function Dashboard({
   const [guildInfo, setGuildInfo] = useState(initialGuild);
   const [availableGuilds, setAvailableGuilds] = useState(initialAvailableGuilds);
   const [newGuildName, setNewGuildName] = useState('');
+  const [joinCodeInput, setJoinCodeInput] = useState('');
   const [guildBusy, setGuildBusy] = useState(false);
+  const [battle, setBattle] = useState(null);
+  const [availableOpponents, setAvailableOpponents] = useState([]);
+  const [challenge, setChallenge] = useState(null);
+  const [pendingCompletions, setPendingCompletions] = useState([]);
+  const [battleBusy, setBattleBusy] = useState(false);
+  const [challengePhotoUploading, setChallengePhotoUploading] = useState(false);
   const [friends, setFriends] = useState(initialFriends);
   const [friendRequests, setFriendRequests] = useState(initialFriendRequests);
   const [pendingOutgoingIds, setPendingOutgoingIds] = useState(initialOutgoingIds);
@@ -734,7 +743,7 @@ export default function Dashboard({
       .sort((a, b) => b.xp - a.xp);
   };
 
-  const joinGuild = async (guildId, guildName) => {
+  const joinGuild = async (guildId, guildName, joinCode) => {
     setGuildBusy(true);
     const { error } = await supabase.from('guild_members').insert({ guild_id: guildId, user_id: userId });
     if (error) {
@@ -743,7 +752,7 @@ export default function Dashboard({
       return;
     }
     const roster = await fetchRoster(guildId);
-    setGuildInfo({ id: guildId, name: guildName, roster });
+    setGuildInfo({ id: guildId, name: guildName, roster, joinCode });
     setGuildBusy(false);
     fireToast('Joined guild!');
     logActivity(`joined ${guildName}`);
@@ -752,14 +761,29 @@ export default function Dashboard({
   const createGuild = async () => {
     if (!newGuildName.trim()) return;
     setGuildBusy(true);
-    const { data, error } = await supabase.from('guilds').insert({ name: newGuildName.trim() }).select().single();
+    const code = generateJoinCode();
+    const { data, error } = await supabase.from('guilds').insert({ name: newGuildName.trim(), join_code: code }).select().single();
     if (error || !data) {
       fireToast('Could not create guild');
       setGuildBusy(false);
       return;
     }
     setNewGuildName('');
-    await joinGuild(data.id, data.name);
+    await joinGuild(data.id, data.name, data.join_code);
+  };
+
+  const joinGuildByCode = async () => {
+    const code = joinCodeInput.trim().toUpperCase();
+    if (!code) return;
+    setGuildBusy(true);
+    const { data: guildRow, error: findError } = await supabase.from('guilds').select('id, name, join_code').eq('join_code', code).maybeSingle();
+    if (findError || !guildRow) {
+      fireToast('Invalid join code');
+      setGuildBusy(false);
+      return;
+    }
+    setJoinCodeInput('');
+    await joinGuild(guildRow.id, guildRow.name, guildRow.join_code);
   };
 
   const leaveGuild = async () => {
@@ -768,8 +792,9 @@ export default function Dashboard({
     await supabase.from('guild_members').delete().eq('guild_id', guildInfo.id).eq('user_id', userId);
     setGuildInfo(null);
     setGuildMessages([]);
-    const { data: guildsList } = await supabase.from('guilds').select('id, name');
-    setAvailableGuilds(guildsList || []);
+    setBattle(null);
+    setChallenge(null);
+    setPendingCompletions([]);
     setGuildBusy(false);
   };
 
@@ -804,9 +829,169 @@ export default function Dashboard({
     setChatBusy(false);
   };
 
+  const loadOpponents = async () => {
+    const { data } = await supabase.from('guilds').select('id, name').neq('id', guildInfo.id);
+    setAvailableOpponents(data || []);
+  };
+
+  const fetchBattle = async (guildId) => {
+    const { data: battleRow } = await supabase
+      .from('guild_battles')
+      .select('*')
+      .or(`guild_a_id.eq.${guildId},guild_b_id.eq.${guildId}`)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (!battleRow) return null;
+
+    const { data: guildRows } = await supabase.from('guilds').select('id, name').in('id', [battleRow.guild_a_id, battleRow.guild_b_id]);
+    const guildAName = guildRows?.find((g) => g.id === battleRow.guild_a_id)?.name || 'Unknown';
+    const guildBName = guildRows?.find((g) => g.id === battleRow.guild_b_id)?.name || 'Unknown';
+
+    if (battleRow.status === 'active' && new Date(battleRow.ends_at) < new Date()) {
+      const winner =
+        battleRow.guild_a_score > battleRow.guild_b_score
+          ? battleRow.guild_a_id
+          : battleRow.guild_b_score > battleRow.guild_a_score
+          ? battleRow.guild_b_id
+          : null;
+      await supabase.from('guild_battles').update({ status: 'finished', winner_guild_id: winner }).eq('id', battleRow.id);
+      battleRow.status = 'finished';
+      battleRow.winner_guild_id = winner;
+    }
+
+    return { ...battleRow, guildAName, guildBName };
+  };
+
+  const fetchChallenge = async (battleId) => {
+    const { data: existing } = await supabase
+      .from('battle_challenges')
+      .select('*')
+      .eq('battle_id', battleId)
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (existing && new Date(existing.expires_at) > new Date()) return existing;
+
+    const pick = BATTLE_CHALLENGE_POOL[Math.floor(Math.random() * BATTLE_CHALLENGE_POOL.length)];
+    const expiresAt = new Date(Date.now() + pick.hours * 3600000).toISOString();
+    const { data: created } = await supabase
+      .from('battle_challenges')
+      .insert({ battle_id: battleId, title: pick.title, xp_multiplier: pick.multiplier, expires_at: expiresAt })
+      .select()
+      .single();
+    return created;
+  };
+
+  const fetchPendingCompletions = async (battleId) => {
+    const { data: challenges } = await supabase.from('battle_challenges').select('id').eq('battle_id', battleId);
+    const challengeIds = (challenges || []).map((c) => c.id);
+    if (challengeIds.length === 0) return [];
+    const { data } = await supabase
+      .from('challenge_completions')
+      .select('*, profiles ( username )')
+      .in('challenge_id', challengeIds)
+      .eq('verified', false)
+      .order('created_at', { ascending: false });
+    return (data || []).map((c) => ({ ...c, username: c.profiles?.username || '?' }));
+  };
+
+  const loadBattleState = async (guildId) => {
+    const b = await fetchBattle(guildId);
+    setBattle(b);
+    if (b && b.status === 'active') {
+      const ch = await fetchChallenge(b.id);
+      setChallenge(ch);
+      const pending = await fetchPendingCompletions(b.id);
+      setPendingCompletions(pending);
+    } else {
+      setChallenge(null);
+      setPendingCompletions([]);
+    }
+  };
+
+  const startBattle = async (opponentGuildId) => {
+    setBattleBusy(true);
+    const endsAt = new Date(Date.now() + 3 * 24 * 3600000).toISOString();
+    const { data, error } = await supabase
+      .from('guild_battles')
+      .insert({ guild_a_id: guildInfo.id, guild_b_id: opponentGuildId, ends_at: endsAt })
+      .select()
+      .single();
+    setBattleBusy(false);
+    if (error || !data) {
+      fireToast('Could not start battle');
+      return;
+    }
+    fireToast('Battle declared!');
+    logActivity('declared a guild battle');
+    setAvailableOpponents([]);
+    await loadBattleState(guildInfo.id);
+  };
+
+  const submitChallengeProof = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file || !challenge) return;
+    setChallengePhotoUploading(true);
+    const fileExt = file.name.split('.').pop();
+    const filePath = `${userId}/battle-${Date.now()}.${fileExt}`;
+    const { error: uploadError } = await supabase.storage.from('checkins').upload(filePath, file);
+    if (uploadError) {
+      fireToast('Upload failed');
+      setChallengePhotoUploading(false);
+      return;
+    }
+    const { data: urlData } = supabase.storage.from('checkins').getPublicUrl(filePath);
+    const { error } = await supabase.from('challenge_completions').insert({
+      challenge_id: challenge.id,
+      user_id: userId,
+      guild_id: guildInfo.id,
+      photo_url: urlData.publicUrl,
+    });
+    if (error) {
+      fireToast('Could not submit — maybe already submitted?');
+    } else {
+      fireToast('Submitted! Waiting for verification.');
+      logActivity(`submitted proof for: ${challenge.title}`);
+      const pending = await fetchPendingCompletions(battle.id);
+      setPendingCompletions(pending);
+    }
+    setChallengePhotoUploading(false);
+  };
+
+  const voteOnCompletion = async (completion, voteType) => {
+    if (completion.user_id === userId) {
+      fireToast("Can't verify your own submission");
+      return;
+    }
+    const { error } = await supabase.from('completion_votes').insert({ completion_id: completion.id, voter_id: userId, vote: voteType });
+    if (error) {
+      fireToast('Already voted on this');
+      return;
+    }
+    const field = voteType === 'confirm' ? 'confirms' : 'rejects';
+    const newCount = (completion[field] || 0) + 1;
+    await supabase.from('challenge_completions').update({ [field]: newCount }).eq('id', completion.id);
+
+    if (voteType === 'confirm' && newCount >= 2) {
+      await supabase.from('challenge_completions').update({ verified: true }).eq('id', completion.id);
+      const scoreField = completion.guild_id === battle.guild_a_id ? 'guild_a_score' : 'guild_b_score';
+      const currentScore = completion.guild_id === battle.guild_a_id ? battle.guild_a_score : battle.guild_b_score;
+      const points = challenge?.xp_multiplier || 2;
+      await supabase.from('guild_battles').update({ [scoreField]: currentScore + points }).eq('id', battle.id);
+      fireToast('Verified! Points awarded to their guild.');
+      logActivity('verified a battle challenge');
+      const updatedBattle = await fetchBattle(guildInfo.id);
+      setBattle(updatedBattle);
+    }
+
+    setPendingCompletions((prev) => prev.filter((c) => c.id !== completion.id));
+  };
+
   useEffect(() => {
     if (activeTab === 'guild' && guildInfo) {
       loadGuildMessages(guildInfo.id);
+      loadBattleState(guildInfo.id);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeTab, guildInfo?.id]);
@@ -857,6 +1042,25 @@ export default function Dashboard({
     setSplitDayIndex(0);
     await supabase.from('profiles').update({ split: newSplit, split_day_index: 0 }).eq('id', userId);
     fireToast('Split updated!');
+  };
+
+  const saveUsername = async () => {
+    const trimmed = usernameInput.trim();
+    if (!trimmed || trimmed === username) {
+      setEditingUsername(false);
+      return;
+    }
+    setUsernameBusy(true);
+    const { error } = await supabase.from('profiles').update({ username: trimmed }).eq('id', userId);
+    if (error) {
+      fireToast(error.message.includes('duplicate') ? 'That username is taken' : 'Could not update username');
+      setUsernameInput(username);
+    } else {
+      setUsername(trimmed);
+      fireToast('Username updated!');
+    }
+    setEditingUsername(false);
+    setUsernameBusy(false);
   };
 
   const heroQuest = quests.find((q) => q.kind === 'hero');
@@ -911,7 +1115,22 @@ export default function Dashboard({
         : []
       : rankTab === 'friends'
       ? []
-      : RANKS_DATA[rankTab];
+      : globalLeaderboard;
+  const weeklyGoals = [
+    { id: 1, title: 'Complete 4 workouts this week', xp: 200, progress: weeklyStats.workoutsThisWeek, target: 4 },
+    { id: 2, title: 'Log 10 lifts this week', xp: 100, progress: weeklyStats.liftsThisWeek, target: 10 },
+    { id: 3, title: 'Hit 70% quest completion', xp: 150, progress: weeklyStats.completionRate, target: 70 },
+  ];
+  const badges = [
+    { id: 1, label: '7-Day Streak', Icon: Flame, unlocked: longestStreak >= 7 },
+    { id: 2, label: '30-Day Streak', Icon: Flame, unlocked: longestStreak >= 30 },
+    { id: 3, label: 'Guild Joined', Icon: Users, unlocked: !!guildInfo },
+    { id: 4, label: '100 Workouts', Icon: Dumbbell, unlocked: workoutCount >= 100 },
+    { id: 5, label: 'Battle Victor', Icon: Swords, unlocked: battleWinCount > 0 },
+    { id: 6, label: 'Elite Rank', Icon: Trophy, unlocked: myRank.name === 'Elite' },
+  ];
+  const pendingNotifCount = friendRequests.length;
+  const streakAtRisk = streak > 0 && heroQuest && !heroQuest.done && new Date().getHours() >= 18;
   const friendBoard = [...friends.map((f) => ({ ...f })), { userId, username, xp, level }].sort((a, b) => b.xp - a.xp);
 
   let mainContent = null;
@@ -935,12 +1154,32 @@ export default function Dashboard({
             >
               {dark ? <Sun size={15} className="text-amber-400" /> : <Moon size={15} className="text-slate-600" />}
             </button>
-            <button className={`w-9 h-9 rounded-full flex items-center justify-center border relative ${T.card} ${T.border}`} aria-label="Notifications">
+            <button
+              onClick={() => {
+                setActiveTab('ranks');
+                setRankTab('friends');
+              }}
+              className={`w-9 h-9 rounded-full flex items-center justify-center border relative transition-all active:scale-90 ${T.card} ${T.border}`}
+              aria-label="Notifications"
+            >
               <Bell size={15} className={T.sub} />
-              <span className="absolute top-1.5 right-2 w-1.5 h-1.5 rounded-full bg-rose-500" />
+              {pendingNotifCount > 0 && (
+                <span className="absolute -top-1 -right-1 min-w-4 h-4 px-1 rounded-full bg-rose-500 text-white text-xs font-bold flex items-center justify-center leading-none">
+                  {pendingNotifCount}
+                </span>
+              )}
             </button>
           </div>
         </div>
+
+        {streakAtRisk && (
+          <div className="rounded-xl border border-rose-500 bg-rose-500 bg-opacity-10 p-3 mb-4 flex items-center gap-2">
+            <Flame size={16} className="text-rose-400 shrink-0" />
+            <p className="text-xs text-rose-300">
+              Your {streak}-day streak is still on the line today — finish your workout before midnight.
+            </p>
+          </div>
+        )}
 
         {/* ---------- streak + level row ---------- */}
         <div className="flex items-stretch gap-3 mb-3">
@@ -1220,7 +1459,7 @@ export default function Dashboard({
           <Eyebrow className={A.primary}>This Week</Eyebrow>
         </div>
         <div className="space-y-2">
-          {WEEKLY_QUESTS.map((w) => (
+          {weeklyGoals.map((w) => (
             <div key={w.id} className={`rounded-xl border p-3 ${T.card} ${T.border}`}>
               <div className="flex items-center justify-between mb-2">
                 <span className="text-sm font-medium">{w.title}</span>
@@ -1490,31 +1729,33 @@ export default function Dashboard({
               Create
             </button>
           </div>
+          <p className={`text-xs ${T.faint} mt-2`}>You'll get a private join code to share with friends.</p>
         </div>
 
-        <Eyebrow className={`${T.faint} mb-2`}>Or Join One</Eyebrow>
-        <div className="space-y-2">
-          {availableGuilds.length === 0 && (
-            <p className={`text-sm ${T.faint}`}>No guilds exist yet — be the first to create one.</p>
-          )}
-          {availableGuilds.map((g) => (
-            <div key={g.id} className={`flex items-center gap-3 rounded-xl border p-3 ${T.card} ${T.border}`}>
-              <Users size={18} className={A.primary} />
-              <span className="flex-1 text-sm font-medium">{g.name}</span>
-              <button
-                onClick={() => joinGuild(g.id, g.name)}
-                disabled={guildBusy}
-                className="font-disp font-bold text-xs uppercase tracking-wide px-3 py-1.5 rounded-lg bg-violet-400 text-slate-950 hover:bg-violet-300 transition-all active:scale-95 disabled:opacity-50"
-              >
-                Join
-              </button>
-            </div>
-          ))}
+        <div className={`rounded-2xl border ${T.card} ${T.border} p-4`}>
+          <Eyebrow className={`${T.faint} mb-2`}>Have a Code?</Eyebrow>
+          <div className="flex gap-2">
+            <input
+              value={joinCodeInput}
+              onChange={(e) => setJoinCodeInput(e.target.value.toUpperCase())}
+              onKeyDown={(e) => e.key === 'Enter' && joinGuildByCode()}
+              placeholder="6-letter code"
+              maxLength={6}
+              className={`flex-1 rounded-xl border px-3 py-2 text-sm outline-none tracking-widest font-disp font-bold ${T.card} ${T.border} ${T.text}`}
+            />
+            <button
+              onClick={joinGuildByCode}
+              disabled={guildBusy || !joinCodeInput.trim()}
+              className="font-disp font-bold text-sm uppercase tracking-wide px-4 py-2 rounded-xl bg-violet-400 text-slate-950 hover:bg-violet-300 transition-all active:scale-95 disabled:opacity-50"
+            >
+              Join
+            </button>
+          </div>
         </div>
       </>
     ) : (
       <>
-        <div className="flex items-center gap-3 mb-5">
+        <div className="flex items-center gap-3 mb-2">
           <div className={`w-14 h-14 rounded-2xl flex items-center justify-center border ${T.card} ${T.border}`}>
             <Users size={26} className={A.primary} />
           </div>
@@ -1523,6 +1764,11 @@ export default function Dashboard({
             <p className={`text-sm ${T.sub}`}>{guildInfo.roster.length} member{guildInfo.roster.length === 1 ? '' : 's'}</p>
           </div>
         </div>
+        {guildInfo.joinCode && (
+          <p className={`text-xs ${T.faint} mb-5`}>
+            Invite code: <span className={`font-disp font-bold tracking-widest ${A.primary}`}>{guildInfo.joinCode}</span>
+          </p>
+        )}
 
         <Eyebrow className={`${T.faint} mb-2`}>Roster</Eyebrow>
         <div className="space-y-1.5 mb-6">
@@ -1550,6 +1796,143 @@ export default function Dashboard({
             );
           })}
         </div>
+
+        <div className="flex items-center gap-2 mb-2">
+          <Swords size={16} className={A.rose} />
+          <Eyebrow className={A.rose}>Guild Battle</Eyebrow>
+        </div>
+
+        {!battle ? (
+          <div className={`rounded-2xl border ${T.card} ${T.border} p-4 mb-6`}>
+            <p className={`text-sm ${T.sub} mb-3`}>No active battle. Challenge another guild to a 3-day war.</p>
+            {availableOpponents.length === 0 ? (
+              <button
+                onClick={loadOpponents}
+                className="font-disp font-bold text-sm uppercase tracking-wide px-4 py-2 rounded-xl bg-violet-400 text-slate-950 hover:bg-violet-300 transition-all active:scale-95"
+              >
+                Find an Opponent
+              </button>
+            ) : (
+              <div className="space-y-2">
+                {availableOpponents.map((g) => (
+                  <div key={g.id} className="flex items-center gap-3">
+                    <Users size={16} className={T.faint} />
+                    <span className="flex-1 text-sm font-medium">{g.name}</span>
+                    <button
+                      onClick={() => startBattle(g.id)}
+                      disabled={battleBusy}
+                      className="font-disp font-bold text-xs uppercase tracking-wide px-3 py-1.5 rounded-lg bg-rose-500 text-white disabled:opacity-50"
+                    >
+                      Declare Battle
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : battle.status === 'finished' ? (
+          <div
+            className={`rounded-2xl border-l-4 ${
+              battle.winner_guild_id === guildInfo.id ? 'border-emerald-500' : battle.winner_guild_id ? 'border-rose-500' : 'border-slate-500'
+            } border ${T.card} ${T.border} p-4 mb-6`}
+          >
+            <p className="font-disp font-bold text-lg">
+              {battle.winner_guild_id === guildInfo.id ? 'Victory!' : battle.winner_guild_id ? 'Defeat' : 'Draw'} vs{' '}
+              {battle.guild_a_id === guildInfo.id ? battle.guildBName : battle.guildAName}
+            </p>
+            <p className={`text-sm ${T.sub} mb-3`}>
+              Final score: {battle.guild_a_score} - {battle.guild_b_score}
+            </p>
+            <button
+              onClick={loadOpponents}
+              className="font-disp font-bold text-sm uppercase tracking-wide px-4 py-2 rounded-xl bg-violet-400 text-slate-950 hover:bg-violet-300 transition-all active:scale-95"
+            >
+              Start a New Battle
+            </button>
+            {availableOpponents.length > 0 && (
+              <div className="space-y-2 mt-3">
+                {availableOpponents.map((g) => (
+                  <div key={g.id} className="flex items-center gap-3">
+                    <Users size={16} className={T.faint} />
+                    <span className="flex-1 text-sm font-medium">{g.name}</span>
+                    <button
+                      onClick={() => startBattle(g.id)}
+                      disabled={battleBusy}
+                      className="font-disp font-bold text-xs uppercase tracking-wide px-3 py-1.5 rounded-lg bg-rose-500 text-white disabled:opacity-50"
+                    >
+                      Declare Battle
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className={`rounded-2xl border-l-4 border-rose-500 border ${T.card} ${T.border} p-4 mb-6`}>
+            <h2 className="font-disp font-bold text-lg mb-1">
+              {guildInfo.name} vs {battle.guild_a_id === guildInfo.id ? battle.guildBName : battle.guildAName}
+            </h2>
+            <div className="flex items-center justify-between mb-1">
+              <span className="font-disp font-bold text-2xl text-violet-400">
+                {battle.guild_a_id === guildInfo.id ? battle.guild_a_score : battle.guild_b_score}
+              </span>
+              <span className={`text-xs font-bold ${T.faint}`}>VS</span>
+              <span className="font-disp font-bold text-2xl">
+                {battle.guild_a_id === guildInfo.id ? battle.guild_b_score : battle.guild_a_score}
+              </span>
+            </div>
+            <p className={`text-xs ${T.faint} mb-3`}>
+              Ends {new Date(battle.ends_at).toLocaleDateString()} at {new Date(battle.ends_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </p>
+
+            {challenge && (
+              <div className={`rounded-xl border ${T.border} p-3`}>
+                <Eyebrow className={A.primary}>Challenge · {challenge.xp_multiplier}x XP</Eyebrow>
+                <p className="text-sm font-medium mt-1">{challenge.title}</p>
+                <p className={`text-xs ${T.faint} mt-1`}>
+                  Expires {new Date(challenge.expires_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                </p>
+                <label className="mt-2 inline-flex items-center gap-1.5 cursor-pointer font-disp font-bold text-xs uppercase tracking-wide px-3 py-1.5 rounded-lg bg-violet-400 text-slate-950">
+                  {challengePhotoUploading ? 'Uploading…' : 'Submit Proof'}
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    disabled={challengePhotoUploading}
+                    onChange={submitChallengeProof}
+                  />
+                </label>
+              </div>
+            )}
+
+            {pendingCompletions.length > 0 && (
+              <div className="mt-3">
+                <Eyebrow className={`${T.faint} mb-2`}>Verify Submissions</Eyebrow>
+                <div className="space-y-2">
+                  {pendingCompletions.map((c) => (
+                    <div key={c.id} className={`flex items-center gap-2 rounded-lg border p-2 ${T.border}`}>
+                      <img src={c.photo_url} alt="" className="w-10 h-10 rounded-lg object-cover shrink-0" />
+                      <span className="flex-1 text-xs font-medium">{c.username}</span>
+                      {c.user_id === userId ? (
+                        <span className={`text-xs ${T.faint}`}>Your submission</span>
+                      ) : (
+                        <>
+                          <button onClick={() => voteOnCompletion(c, 'confirm')} className="text-emerald-400">
+                            <CheckCircle2 size={18} />
+                          </button>
+                          <button onClick={() => voteOnCompletion(c, 'reject')} className="text-rose-400">
+                            <X size={18} />
+                          </button>
+                        </>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         <div className="flex items-center gap-2 mb-2">
           <MessageCircle size={16} className={A.primary} />
@@ -1621,7 +2004,40 @@ export default function Dashboard({
             </div>
           </div>
           <div>
-            <h1 className="font-disp font-bold text-2xl">{username}</h1>
+            {editingUsername ? (
+              <div className="flex items-center gap-2">
+                <input
+                  value={usernameInput}
+                  onChange={(e) => setUsernameInput(e.target.value)}
+                  onKeyDown={(e) => e.key === 'Enter' && saveUsername()}
+                  autoFocus
+                  className={`font-disp font-bold text-xl rounded-lg border px-2 py-1 outline-none ${T.card} ${T.border} ${T.text}`}
+                />
+                <button onClick={saveUsername} disabled={usernameBusy} className="text-emerald-400">
+                  <CheckCircle2 size={20} />
+                </button>
+                <button
+                  onClick={() => {
+                    setEditingUsername(false);
+                    setUsernameInput(username);
+                  }}
+                  className={T.faint}
+                >
+                  <X size={20} />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => {
+                  setUsernameInput(username);
+                  setEditingUsername(true);
+                }}
+                className="flex items-center gap-1.5"
+              >
+                <h1 className="font-disp font-bold text-2xl">{username}</h1>
+                <Settings size={14} className={T.faint} />
+              </button>
+            )}
             <div className="flex items-center gap-1 mt-1">
               <Flame size={14} className={A.ember} />
               <span className={`text-sm ${T.sub}`}>{streak} day streak</span>
@@ -1638,6 +2054,21 @@ export default function Dashboard({
             <div key={s.label} className={`rounded-xl border p-3 ${T.card} ${T.border}`}>
               <div className="font-disp font-bold text-xl">{s.value}</div>
               <div className={`text-xs ${T.faint}`}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+
+        <Eyebrow className={`${T.faint} mb-2`}>Badges</Eyebrow>
+        <div className="grid grid-cols-3 gap-3 mb-6">
+          {badges.map((b) => (
+            <div
+              key={b.id}
+              className={`flex flex-col items-center gap-2 rounded-xl border p-3 ${T.card} ${T.border} ${!b.unlocked ? 'opacity-40' : ''}`}
+            >
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center ${b.unlocked ? 'bg-violet-400 bg-opacity-10' : T.track}`}>
+                {b.unlocked ? <b.Icon size={22} className={A.primary} /> : <Lock size={18} className={T.faint} />}
+              </div>
+              <span className={`text-xs text-center font-medium ${b.unlocked ? T.text : T.faint}`}>{b.label}</span>
             </div>
           ))}
         </div>

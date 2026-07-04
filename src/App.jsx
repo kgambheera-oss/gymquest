@@ -165,6 +165,26 @@ async function fetchCheckinPhotos(myId) {
   return data || [];
 }
 
+async function fetchGlobalLeaderboard(myId) {
+  const { data } = await supabase.from('profiles').select('id, username, level, xp').limit(500);
+  const withTotal = (data || []).map((p) => ({
+    id: p.id,
+    name: p.username,
+    xp: (p.level - 1) * 3000 + (p.xp || 0),
+  }));
+  withTotal.sort((a, b) => b.xp - a.xp);
+  return withTotal.map((p, idx) => ({ rank: idx + 1, name: p.name, xp: p.xp, isUser: p.id === myId }));
+}
+
+async function fetchBattleWinCount(guildId) {
+  if (!guildId) return 0;
+  const { count } = await supabase
+    .from('guild_battles')
+    .select('*', { count: 'exact', head: true })
+    .eq('winner_guild_id', guildId);
+  return count || 0;
+}
+
 const VARIETY_QUEST_POOL = [
   { title: 'Log 8 working sets', xp_reward: 50 },
   { title: 'Log 3 different exercises', xp_reward: 60 },
@@ -180,8 +200,53 @@ function pickVarietyQuest(dateStr) {
   return VARIETY_QUEST_POOL[Math.abs(hash)];
 }
 
+function ResetPasswordScreen({ onDone }) {
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    setError('');
+    setBusy(true);
+    const { error } = await supabase.auth.updateUser({ password });
+    setBusy(false);
+    if (error) {
+      setError(error.message);
+    } else {
+      onDone();
+    }
+  };
+
+  return (
+    <div className="min-h-screen w-full flex items-center justify-center bg-slate-950 px-5">
+      <form onSubmit={handleSubmit} className="w-full max-w-sm space-y-3">
+        <h1 className="font-bold text-2xl text-slate-50 mb-1">Set a new password</h1>
+        <input
+          type="password"
+          required
+          minLength={6}
+          placeholder="New password (6+ characters)"
+          value={password}
+          onChange={(e) => setPassword(e.target.value)}
+          className="w-full rounded-xl border border-slate-800 bg-slate-900 text-slate-50 placeholder-slate-500 px-4 py-3 text-sm outline-none focus:border-violet-400"
+        />
+        {error && <p className="text-sm text-rose-400">{error}</p>}
+        <button
+          type="submit"
+          disabled={busy}
+          className="w-full font-bold uppercase tracking-wide text-sm bg-violet-400 text-slate-950 rounded-xl py-3 hover:bg-violet-300 transition-colors disabled:opacity-50"
+        >
+          {busy ? 'Saving…' : 'Save New Password'}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 export default function App() {
   const [session, setSession] = useState(null);
+  const [recoveryMode, setRecoveryMode] = useState(false);
   const [profile, setProfile] = useState(null);
   const [quests, setQuests] = useState(null);
   const [guildInfo, setGuildInfo] = useState(null);
@@ -196,6 +261,8 @@ export default function App() {
   const [completedDates, setCompletedDates] = useState([]);
   const [weeklyStats, setWeeklyStats] = useState({ workoutsThisWeek: 0, xpThisWeek: 0, completionRate: 0, liftsThisWeek: 0 });
   const [checkinPhotos, setCheckinPhotos] = useState([]);
+  const [globalLeaderboard, setGlobalLeaderboard] = useState([]);
+  const [battleWinCount, setBattleWinCount] = useState(0);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -204,7 +271,10 @@ export default function App() {
       if (!session) setLoading(false);
     });
 
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, newSession) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, newSession) => {
+      if (event === 'PASSWORD_RECOVERY') {
+        setRecoveryMode(true);
+      }
       setSession(newSession);
       if (!newSession) {
         setProfile(null);
@@ -270,13 +340,15 @@ export default function App() {
 
       const { data: membership } = await supabase
         .from('guild_members')
-        .select('guild_id, guilds ( id, name )')
+        .select('guild_id, guilds ( id, name, join_code )')
         .eq('user_id', session.user.id)
         .maybeSingle();
 
+      let currentGuildId = null;
       if (membership && membership.guilds) {
+        currentGuildId = membership.guild_id;
         const roster = await fetchRoster(membership.guild_id);
-        setGuildInfo({ id: membership.guild_id, name: membership.guilds.name, roster });
+        setGuildInfo({ id: membership.guild_id, name: membership.guilds.name, roster, joinCode: membership.guilds.join_code });
       } else {
         const { data: guildsList } = await supabase.from('guilds').select('id, name');
         setAvailableGuilds(guildsList || []);
@@ -309,6 +381,12 @@ export default function App() {
       const photos = await fetchCheckinPhotos(session.user.id);
       setCheckinPhotos(photos);
 
+      const globalBoard = await fetchGlobalLeaderboard(session.user.id);
+      setGlobalLeaderboard(globalBoard);
+
+      const wins = await fetchBattleWinCount(currentGuildId);
+      setBattleWinCount(wins);
+
       setLoading(false);
     };
 
@@ -318,6 +396,10 @@ export default function App() {
   const handleSignOut = () => {
     supabase.auth.signOut();
   };
+
+  if (recoveryMode) {
+    return <ResetPasswordScreen onDone={() => setRecoveryMode(false)} />;
+  }
 
   if (!session) return <Auth />;
 
@@ -338,7 +420,7 @@ export default function App() {
       initialLongestStreak={profile.longest_streak}
       initialWorkoutCount={workoutCount}
       createdAt={profile.created_at}
-      username={profile.username}
+      initialUsername={profile.username}
       initialSplit={profile.split}
       initialSplitDayIndex={profile.split_day_index || 0}
       initialQuests={quests}
@@ -353,6 +435,8 @@ export default function App() {
       initialCompletedDates={completedDates}
       initialWeeklyStats={weeklyStats}
       initialCheckinPhotos={checkinPhotos}
+      initialGlobalLeaderboard={globalLeaderboard}
+      initialBattleWinCount={battleWinCount}
       onSignOut={handleSignOut}
     />
   );
