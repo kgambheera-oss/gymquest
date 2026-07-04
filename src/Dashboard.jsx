@@ -5,7 +5,7 @@ import {
   Zap, Flame, Sun, Moon, Bell, Dumbbell, ClipboardCheck, Camera,
   TrendingUp, CheckCircle2, Circle, Swords, Trophy, Users, ChevronRight,
   Home, Target, User, Calendar, Lock, Settings, Send, MessageCircle, Shield,
-  Activity, Sparkles, X,
+  Activity, Sparkles, X, Flag,
 } from 'lucide-react';
 
 /* ---------------------------------- mock data (not yet wired to the DB) ---------------------------------- */
@@ -77,6 +77,13 @@ function formatMemberSince(dateStr) {
   return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
 }
 
+function localDateStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
 function generateJoinCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
   let code = '';
@@ -135,7 +142,7 @@ function Heatmap({ completedDates, dark }) {
   for (let i = 83; i >= 0; i--) {
     const d = new Date(today);
     d.setDate(d.getDate() - i);
-    const dateStr = d.toISOString().slice(0, 10);
+    const dateStr = localDateStr(d);
     cells.push({ date: dateStr, completed: completedDates.includes(dateStr), dow: d.getDay() });
   }
   const firstDow = cells[0].dow;
@@ -199,78 +206,108 @@ function generateCoachTips({ streak, stats, doneToday, totalToday, weeklyStats, 
 /* --------------------------- exercise catalog (preset + custom) ------------------------- */
 
 const EXERCISES = [
-  { name: 'Bench Press', category: 'strength' },
-  { name: 'Incline Bench Press', category: 'strength' },
-  { name: 'Decline Bench Press', category: 'strength' },
-  { name: 'Dumbbell Bench Press', category: 'strength' },
-  { name: 'Dumbbell Incline Press', category: 'strength' },
-  { name: 'Chest Fly', category: 'strength' },
-  { name: 'Cable Fly', category: 'strength' },
-  { name: 'Squat', category: 'strength' },
-  { name: 'Front Squat', category: 'strength' },
-  { name: 'Goblet Squat', category: 'strength' },
-  { name: 'Leg Press', category: 'strength' },
-  { name: 'Lunges', category: 'strength' },
-  { name: 'Bulgarian Split Squat', category: 'strength' },
-  { name: 'Leg Extension', category: 'strength' },
-  { name: 'Leg Curl', category: 'strength' },
-  { name: 'Calf Raise', category: 'strength' },
-  { name: 'Deadlift', category: 'strength' },
-  { name: 'Romanian Deadlift', category: 'strength' },
-  { name: 'Sumo Deadlift', category: 'strength' },
-  { name: 'Hip Thrust', category: 'strength' },
-  { name: 'Barbell Row', category: 'strength' },
-  { name: 'T-Bar Row', category: 'strength' },
-  { name: 'Single-Arm Dumbbell Row', category: 'strength' },
-  { name: 'Seated Cable Row', category: 'strength' },
-  { name: 'Lat Pulldown', category: 'strength' },
-  { name: 'Face Pull', category: 'strength' },
-  { name: 'Shrugs', category: 'strength' },
-  { name: 'Overhead Press', category: 'strength' },
-  { name: 'Dumbbell Shoulder Press', category: 'strength' },
-  { name: 'Arnold Press', category: 'strength' },
-  { name: 'Lateral Raise', category: 'strength' },
-  { name: 'Front Raise', category: 'strength' },
-  { name: 'Rear Delt Fly', category: 'strength' },
-  { name: 'Upright Row', category: 'strength' },
-  { name: 'Close-Grip Bench Press', category: 'strength' },
-  { name: 'Bicep Curl', category: 'strength' },
-  { name: 'Hammer Curl', category: 'strength' },
-  { name: 'Barbell Curl', category: 'strength' },
-  { name: 'Preacher Curl', category: 'strength' },
-  { name: 'Tricep Extension', category: 'strength' },
-  { name: 'Skull Crushers', category: 'strength' },
-  { name: 'Tricep Pushdown', category: 'strength' },
-  { name: 'Power Clean', category: 'power' },
-  { name: 'Clean and Jerk', category: 'power' },
-  { name: 'Snatch', category: 'power' },
-  { name: 'Hang Clean', category: 'power' },
-  { name: 'Push Press', category: 'power' },
-  { name: 'Box Jump', category: 'power' },
-  { name: 'Kettlebell Swing', category: 'power' },
-  { name: 'Medicine Ball Slam', category: 'power' },
-  { name: 'Running', category: 'endurance' },
-  { name: 'Rowing (Cardio)', category: 'endurance' },
-  { name: 'Assault Bike', category: 'endurance' },
-  { name: 'Jump Rope', category: 'endurance' },
-  { name: 'Battle Ropes', category: 'endurance' },
-  { name: 'Burpees', category: 'endurance' },
-  { name: 'Stair Climber', category: 'endurance' },
-  { name: 'Elliptical', category: 'endurance' },
-  { name: 'Pull-Up', category: 'stamina' },
-  { name: 'Chin-Up', category: 'stamina' },
-  { name: 'Push-Up', category: 'stamina' },
-  { name: 'Dips', category: 'stamina' },
-  { name: 'Plank', category: 'stamina' },
-  { name: 'Sit-Up', category: 'stamina' },
-  { name: 'Crunch', category: 'stamina' },
-  { name: 'Hanging Leg Raise', category: 'stamina' },
-  { name: 'Russian Twist', category: 'stamina' },
-  { name: 'Mountain Climbers', category: 'stamina' },
-  { name: 'Bodyweight Squats', category: 'stamina' },
-  { name: 'Ab Wheel Rollout', category: 'stamina' },
-  { name: 'Cable Crunch', category: 'stamina' },
+  { name: 'Bench Press', category: 'strength', zones: ['chest'] },
+  { name: 'Incline Bench Press', category: 'strength', zones: ['chest', 'shoulders'] },
+  { name: 'Decline Bench Press', category: 'strength', zones: ['chest'] },
+  { name: 'Dumbbell Bench Press', category: 'strength', zones: ['chest'] },
+  { name: 'Dumbbell Incline Press', category: 'strength', zones: ['chest', 'shoulders'] },
+  { name: 'Chest Fly', category: 'strength', zones: ['chest'] },
+  { name: 'Cable Fly', category: 'strength', zones: ['chest'] },
+  { name: 'Squat', category: 'strength', zones: ['legs'] },
+  { name: 'Front Squat', category: 'strength', zones: ['legs'] },
+  { name: 'Goblet Squat', category: 'strength', zones: ['legs'] },
+  { name: 'Leg Press', category: 'strength', zones: ['legs'] },
+  { name: 'Lunges', category: 'strength', zones: ['legs'] },
+  { name: 'Bulgarian Split Squat', category: 'strength', zones: ['legs'] },
+  { name: 'Leg Extension', category: 'strength', zones: ['legs'] },
+  { name: 'Leg Curl', category: 'strength', zones: ['legs'] },
+  { name: 'Calf Raise', category: 'strength', zones: ['legs'] },
+  { name: 'Deadlift', category: 'strength', zones: ['legs', 'back'] },
+  { name: 'Romanian Deadlift', category: 'strength', zones: ['legs', 'back'] },
+  { name: 'Sumo Deadlift', category: 'strength', zones: ['legs', 'back'] },
+  { name: 'Hip Thrust', category: 'strength', zones: ['legs'] },
+  { name: 'Barbell Row', category: 'strength', zones: ['back'] },
+  { name: 'T-Bar Row', category: 'strength', zones: ['back'] },
+  { name: 'Single-Arm Dumbbell Row', category: 'strength', zones: ['back'] },
+  { name: 'Seated Cable Row', category: 'strength', zones: ['back'] },
+  { name: 'Lat Pulldown', category: 'strength', zones: ['back'] },
+  { name: 'Face Pull', category: 'strength', zones: ['back', 'shoulders'] },
+  { name: 'Shrugs', category: 'strength', zones: ['back', 'shoulders'] },
+  { name: 'Overhead Press', category: 'strength', zones: ['shoulders'] },
+  { name: 'Dumbbell Shoulder Press', category: 'strength', zones: ['shoulders'] },
+  { name: 'Arnold Press', category: 'strength', zones: ['shoulders'] },
+  { name: 'Lateral Raise', category: 'strength', zones: ['shoulders'] },
+  { name: 'Front Raise', category: 'strength', zones: ['shoulders'] },
+  { name: 'Rear Delt Fly', category: 'strength', zones: ['shoulders', 'back'] },
+  { name: 'Upright Row', category: 'strength', zones: ['shoulders'] },
+  { name: 'Close-Grip Bench Press', category: 'strength', zones: ['chest', 'arms'] },
+  { name: 'Bicep Curl', category: 'strength', zones: ['arms'] },
+  { name: 'Hammer Curl', category: 'strength', zones: ['arms'] },
+  { name: 'Barbell Curl', category: 'strength', zones: ['arms'] },
+  { name: 'Preacher Curl', category: 'strength', zones: ['arms'] },
+  { name: 'Tricep Extension', category: 'strength', zones: ['arms'] },
+  { name: 'Skull Crushers', category: 'strength', zones: ['arms'] },
+  { name: 'Tricep Pushdown', category: 'strength', zones: ['arms'] },
+  { name: 'Power Clean', category: 'power', zones: ['legs', 'shoulders'] },
+  { name: 'Clean and Jerk', category: 'power', zones: ['legs', 'shoulders'] },
+  { name: 'Snatch', category: 'power', zones: ['legs', 'shoulders'] },
+  { name: 'Hang Clean', category: 'power', zones: ['legs', 'shoulders'] },
+  { name: 'Push Press', category: 'power', zones: ['shoulders', 'legs'] },
+  { name: 'Box Jump', category: 'power', zones: ['legs'] },
+  { name: 'Kettlebell Swing', category: 'power', zones: ['legs', 'back'] },
+  { name: 'Medicine Ball Slam', category: 'power', zones: ['abs', 'arms'] },
+  { name: 'Running', category: 'endurance', zones: [] },
+  { name: 'Rowing (Cardio)', category: 'endurance', zones: [] },
+  { name: 'Assault Bike', category: 'endurance', zones: [] },
+  { name: 'Jump Rope', category: 'endurance', zones: ['legs'] },
+  { name: 'Battle Ropes', category: 'endurance', zones: ['arms'] },
+  { name: 'Burpees', category: 'endurance', zones: ['chest', 'legs', 'abs'] },
+  { name: 'Stair Climber', category: 'endurance', zones: [] },
+  { name: 'Elliptical', category: 'endurance', zones: [] },
+  { name: 'Pull-Up', category: 'stamina', zones: ['back', 'arms'] },
+  { name: 'Chin-Up', category: 'stamina', zones: ['back', 'arms'] },
+  { name: 'Push-Up', category: 'stamina', zones: ['chest', 'arms'] },
+  { name: 'Dips', category: 'stamina', zones: ['chest', 'arms'] },
+  { name: 'Plank', category: 'stamina', zones: ['abs'] },
+  { name: 'Sit-Up', category: 'stamina', zones: ['abs'] },
+  { name: 'Crunch', category: 'stamina', zones: ['abs'] },
+  { name: 'Hanging Leg Raise', category: 'stamina', zones: ['abs'] },
+  { name: 'Russian Twist', category: 'stamina', zones: ['abs'] },
+  { name: 'Mountain Climbers', category: 'stamina', zones: ['abs', 'legs'] },
+  { name: 'Bodyweight Squats', category: 'stamina', zones: ['legs'] },
+  { name: 'Ab Wheel Rollout', category: 'stamina', zones: ['abs'] },
+  { name: 'Cable Crunch', category: 'stamina', zones: ['abs'] },
 ];
+
+const LIFT_EXERCISES = EXERCISES.filter((e) => e.category !== 'endurance');
+const CARDIO_EXERCISES = EXERCISES.filter((e) => e.category === 'endurance');
+
+function BodyDiagram({ activeZones = [], glowLevel = 0 }) {
+  const isOn = (zone) => activeZones.includes(zone);
+  const litColor = '#fb923c';
+  const litGlow = '#f97316';
+  const idle = '#334155';
+  const fill = (zone) => (isOn(zone) ? litColor : idle);
+  const glowStyle = (zone) =>
+    isOn(zone) ? { filter: `drop-shadow(0 0 6px ${litGlow})`, transition: 'all 300ms ease' } : { transition: 'all 300ms ease' };
+  const bodyGlow = glowLevel > 0 ? { filter: `drop-shadow(0 0 ${4 + glowLevel * 0.12}px rgba(167,139,250,${0.3 + glowLevel * 0.005}))` } : {};
+
+  return (
+    <svg viewBox="0 0 200 340" className="w-full h-auto" style={bodyGlow}>
+      <circle cx="100" cy="30" r="22" fill={idle} />
+      <rect x="90" y="48" width="20" height="14" fill={idle} />
+      <ellipse cx="62" cy="78" rx="16" ry="12" fill={fill('shoulders')} style={glowStyle('shoulders')} />
+      <ellipse cx="138" cy="78" rx="16" ry="12" fill={fill('shoulders')} style={glowStyle('shoulders')} />
+      <rect x="68" y="66" width="64" height="55" rx="12" fill={fill('chest')} style={glowStyle('chest')} />
+      <rect x="72" y="118" width="56" height="55" rx="10" fill={fill('abs')} style={glowStyle('abs')} />
+      <rect x="36" y="72" width="22" height="95" rx="11" fill={fill('arms')} style={glowStyle('arms')} />
+      <rect x="142" y="72" width="22" height="95" rx="11" fill={fill('arms')} style={glowStyle('arms')} />
+      <rect x="70" y="170" width="60" height="28" rx="8" fill={idle} />
+      <rect x="70" y="196" width="26" height="130" rx="12" fill={fill('legs')} style={glowStyle('legs')} />
+      <rect x="104" y="196" width="26" height="130" rx="12" fill={fill('legs')} style={glowStyle('legs')} />
+    </svg>
+  );
+}
 
 function scoreFromVolume(vol) {
   return Math.min(100, Math.round((vol / 200) * 100));
@@ -375,7 +412,7 @@ function HeroQuestCard({ quest, onComplete, T, A, dark, compact, eyebrowText, su
           onClick={onComplete}
           disabled={quest.done}
           className={`font-disp font-bold text-sm uppercase tracking-wide px-4 py-2 rounded-xl flex items-center gap-1.5 transition-all active:scale-95 ${
-            quest.done ? 'bg-emerald-500 bg-opacity-20 text-emerald-400' : 'bg-violet-400 text-slate-950 hover:bg-violet-300'
+            quest.done ? 'bg-emerald-500/20 text-emerald-400' : 'bg-violet-400 text-slate-950 hover:bg-violet-300'
           }`}
         >
           {quest.done ? (
@@ -461,10 +498,15 @@ export default function Dashboard({
   initialOutgoingIds = [],
   initialActivity = [],
   initialAttributeCounts = { strength: 0, power: 0, endurance: 0, stamina: 0 },
+  initialHeight = null,
+  initialWeight = null,
   initialDisciplineCount = 0,
   initialCompletedDates = [],
   initialWeeklyStats = { workoutsThisWeek: 0, xpThisWeek: 0, completionRate: 0, liftsThisWeek: 0 },
   initialCheckinPhotos = [],
+  initialCalorieGoal = 2000,
+  initialTodayFood = [],
+  initialWeeklyCalories = [],
   initialGlobalLeaderboard = [],
   initialBattleWinCount = 0,
   onSignOut,
@@ -512,15 +554,32 @@ export default function Dashboard({
   const [chatBusy, setChatBusy] = useState(false);
   const [attributeCounts, setAttributeCounts] = useState(initialAttributeCounts);
   const [disciplineCount, setDisciplineCount] = useState(initialDisciplineCount);
-  const [completedDates] = useState(initialCompletedDates);
+  const [completedDates, setCompletedDates] = useState(initialCompletedDates);
   const [weeklyStats, setWeeklyStats] = useState(initialWeeklyStats);
   const [checkinPhotos, setCheckinPhotos] = useState(initialCheckinPhotos);
-  const [selectedExercise, setSelectedExercise] = useState(EXERCISES[0].name);
+  const [calorieGoal, setCalorieGoal] = useState(initialCalorieGoal);
+  const [goalInput, setGoalInput] = useState(String(initialCalorieGoal));
+  const [todayFood, setTodayFood] = useState(initialTodayFood);
+  const [weeklyCalories, setWeeklyCalories] = useState(initialWeeklyCalories);
+  const [foodName, setFoodName] = useState('');
+  const [foodCalories, setFoodCalories] = useState('');
+  const [foodBusy, setFoodBusy] = useState(false);
+  const [selectedExercise, setSelectedExercise] = useState(LIFT_EXERCISES[0].name);
+  const [logTab, setLogTab] = useState('lift');
   const [customExercise, setCustomExercise] = useState('');
   const [logWeight, setLogWeight] = useState('');
   const [logReps, setLogReps] = useState('');
   const [logSets, setLogSets] = useState('1');
+  const [logDuration, setLogDuration] = useState('');
   const [logBusy, setLogBusy] = useState(false);
+  const [musclePopup, setMusclePopup] = useState(null);
+  const [heightInput, setHeightInput] = useState(initialHeight ? String(initialHeight) : '');
+  const [weightInput, setWeightInput] = useState(initialWeight ? String(initialWeight) : '');
+  const [reportTarget, setReportTarget] = useState(null);
+  const [reportReason, setReportReason] = useState('Harassment');
+  const [reportDetails, setReportDetails] = useState('');
+  const [reportBusy, setReportBusy] = useState(false);
+  const [showAllRanks, setShowAllRanks] = useState(false);
   const toastTimer = useRef(null);
 
   const T = dark
@@ -599,7 +658,7 @@ export default function Dashboard({
   };
 
   const updateStreak = async () => {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDateStr(new Date());
     const { data: profileRow } = await supabase
       .from('profiles')
       .select('streak, longest_streak, last_active_date')
@@ -631,9 +690,21 @@ export default function Dashboard({
   const toggleQuest = (quest) => {
     if (quest.kind === 'hero' && quest.done) return;
     const newDone = !quest.done;
+    const direction = newDone ? 1 : -1;
     setQuests((prev) => prev.map((q) => (q.id === quest.id ? { ...q, done: newDone } : q)));
     applyXP(newDone ? quest.xp_reward : -quest.xp_reward);
-    if (newDone) setDisciplineCount((c) => c + 1);
+    setDisciplineCount((c) => Math.max(0, c + direction));
+
+    const isSpecialQuest = quest.title === 'Gym photo check-in' || quest.title === 'Beat a previous PR';
+    if (!isSpecialQuest) {
+      setAttributeCounts((prev) => ({
+        ...prev,
+        strength: Math.max(0, (prev.strength || 0) + direction * 10),
+        power: Math.max(0, (prev.power || 0) + direction * 5),
+        stamina: Math.max(0, (prev.stamina || 0) + direction * 5),
+      }));
+    }
+
     supabase
       .from('quests')
       .update({ done: newDone })
@@ -645,6 +716,8 @@ export default function Dashboard({
       logActivity(`crushed ${quest.title}`);
       updateStreak();
       setWeeklyStats((w) => ({ ...w, workoutsThisWeek: w.workoutsThisWeek + 1 }));
+      const today = localDateStr(new Date());
+      setCompletedDates((prev) => (prev.includes(today) ? prev : [...prev, today]));
     } else if (newDone && quest.title === 'Beat a previous PR') {
       logActivity('hit a new PR');
     }
@@ -691,15 +764,47 @@ export default function Dashboard({
 
   const logLift = async () => {
     const exerciseName = selectedExercise === '__custom__' ? customExercise.trim() : selectedExercise;
+    if (!exerciseName) {
+      fireToast('Pick or type an exercise');
+      return;
+    }
+    const exerciseDef = EXERCISES.find((e) => e.name === exerciseName);
+    const isCardio = logTab === 'cardio';
+
+    if (isCardio) {
+      const duration = parseInt(logDuration, 10) || 0;
+      if (duration <= 0) {
+        fireToast('Add a duration');
+        return;
+      }
+      setLogBusy(true);
+      const { error } = await supabase
+        .from('exercise_logs')
+        .insert({ user_id: userId, exercise: exerciseName, category: 'endurance', duration_minutes: duration, reps: 0, sets: 0, weight: 0 });
+      if (error) {
+        fireToast('Could not log cardio');
+        setLogBusy(false);
+        return;
+      }
+      setAttributeCounts((prev) => ({ ...prev, endurance: (prev.endurance || 0) + duration }));
+      fireToast(`${exerciseName} logged — ${duration} min`);
+      logActivity(`logged ${duration} min of ${exerciseName}`);
+      setLogDuration('');
+      setCustomExercise('');
+      setLogBusy(false);
+      return;
+    }
+
     const reps = parseInt(logReps, 10) || 0;
     const sets = parseInt(logSets, 10) || 1;
     const weight = parseFloat(logWeight) || 0;
-    if (!exerciseName || reps <= 0) {
+    if (reps <= 0) {
       fireToast('Add reps at least');
       return;
     }
     setLogBusy(true);
-    const category = EXERCISES.find((e) => e.name === exerciseName)?.category || 'strength';
+    const category = exerciseDef?.category || 'strength';
+    const zones = exerciseDef?.zones || [];
 
     const { data: prevBest } = await supabase
       .from('exercise_logs')
@@ -719,7 +824,6 @@ export default function Dashboard({
     }
 
     setAttributeCounts((prev) => ({ ...prev, [category]: (prev[category] || 0) + reps * sets }));
-    fireToast(isPR ? `New PR: ${exerciseName}!` : `${exerciseName} logged`);
     logActivity(isPR ? `hit a new PR on ${exerciseName}` : `logged ${exerciseName}`);
 
     if (isPR) {
@@ -727,10 +831,89 @@ export default function Dashboard({
       if (prQuest && !prQuest.done) toggleQuest(prQuest);
     }
 
+    setMusclePopup({ exerciseName, zones, isPR });
+    setTimeout(() => setMusclePopup(null), 2800);
+
     setLogWeight('');
     setLogReps('');
     setCustomExercise('');
     setLogBusy(false);
+  };
+
+  const saveBodyStats = async () => {
+    const height = parseFloat(heightInput) || null;
+    const weight = parseFloat(weightInput) || null;
+    await supabase.from('profiles').update({ height_cm: height, weight_kg: weight }).eq('id', userId);
+    fireToast('Body stats saved');
+  };
+
+  const saveCalorieGoal = async () => {
+    const goal = parseInt(goalInput, 10) || 2000;
+    setCalorieGoal(goal);
+    await supabase.from('profiles').update({ calorie_goal: goal }).eq('id', userId);
+    fireToast('Calorie goal saved');
+  };
+
+  const syncTodayIntoWeeklyChart = (newTodayFood) => {
+    const total = newTodayFood.reduce((sum, f) => sum + f.calories, 0);
+    setWeeklyCalories((prev) => {
+      if (prev.length === 0) return prev;
+      const updated = [...prev];
+      updated[updated.length - 1] = { ...updated[updated.length - 1], total };
+      return updated;
+    });
+  };
+
+  const addFood = async () => {
+    const name = foodName.trim();
+    const cals = parseInt(foodCalories, 10) || 0;
+    if (!name || cals <= 0) {
+      fireToast('Add a food name and calories');
+      return;
+    }
+    setFoodBusy(true);
+    const { data, error } = await supabase
+      .from('food_logs')
+      .insert({ user_id: userId, food_name: name, calories: cals, logged_date: localDateStr(new Date()) })
+      .select()
+      .single();
+    setFoodBusy(false);
+    if (error || !data) {
+      fireToast('Could not log food');
+      return;
+    }
+    const newTodayFood = [...todayFood, data];
+    setTodayFood(newTodayFood);
+    syncTodayIntoWeeklyChart(newTodayFood);
+    setFoodName('');
+    setFoodCalories('');
+  };
+
+  const deleteFood = async (id) => {
+    await supabase.from('food_logs').delete().eq('id', id);
+    const newTodayFood = todayFood.filter((f) => f.id !== id);
+    setTodayFood(newTodayFood);
+    syncTodayIntoWeeklyChart(newTodayFood);
+  };
+
+  const submitReport = async () => {
+    if (!reportTarget) return;
+    setReportBusy(true);
+    const { error } = await supabase.from('reports').insert({
+      reporter_id: userId,
+      reported_user_id: reportTarget.userId,
+      reason: reportReason,
+      context: reportDetails.trim() || null,
+    });
+    setReportBusy(false);
+    if (error) {
+      fireToast('Could not submit report');
+      return;
+    }
+    fireToast('Report submitted — thank you');
+    setReportTarget(null);
+    setReportDetails('');
+    setReportReason('Harassment');
   };
 
   const fetchRoster = async (guildId) => {
@@ -1080,7 +1263,7 @@ export default function Dashboard({
   const STATS = [
     { key: 'STR', label: 'Strength', value: scoreFromVolume(attributeCounts.strength || 0) },
     { key: 'PWR', label: 'Power', value: scoreFromVolume(attributeCounts.power || 0) },
-    { key: 'END', label: 'Endurance', value: scoreFromVolume(attributeCounts.endurance || 0) },
+    { key: 'END', label: 'Endurance', value: Math.min(100, Math.round(((attributeCounts.endurance || 0) / 300) * 100)) },
     { key: 'DISC', label: 'Discipline', value: Math.min(100, Math.round((disciplineCount / 30) * 100)) },
     { key: 'STAM', label: 'Stamina', value: scoreFromVolume(attributeCounts.stamina || 0) },
   ];
@@ -1173,7 +1356,7 @@ export default function Dashboard({
         </div>
 
         {streakAtRisk && (
-          <div className="rounded-xl border border-rose-500 bg-rose-500 bg-opacity-10 p-3 mb-4 flex items-center gap-2">
+          <div className="rounded-xl border border-rose-500 bg-rose-500/10 p-3 mb-4 flex items-center gap-2">
             <Flame size={16} className="text-rose-400 shrink-0" />
             <p className="text-xs text-rose-300">
               Your {streak}-day streak is still on the line today — finish your workout before midnight.
@@ -1184,7 +1367,7 @@ export default function Dashboard({
         {/* ---------- streak + level row ---------- */}
         <div className="flex items-stretch gap-3 mb-3">
           <div className={`flex-1 rounded-2xl border ${T.card} ${T.border} p-3 flex items-center gap-3`}>
-            <div className="w-11 h-11 rounded-xl bg-orange-500 bg-opacity-10 flex items-center justify-center" style={{ boxShadow: dark ? '0 0 18px rgba(251,146,60,0.25)' : 'none' }}>
+            <div className="w-11 h-11 rounded-xl bg-orange-500/10 flex items-center justify-center" style={{ boxShadow: dark ? '0 0 18px rgba(251,146,60,0.25)' : 'none' }}>
               <Flame size={22} className={`flame-pulse ${A.ember}`} fill="currentColor" />
             </div>
             <div>
@@ -1321,7 +1504,7 @@ export default function Dashboard({
                 return (
                   <div
                     key={p.userId}
-                    className={`flex items-center gap-3 rounded-lg ${isMe ? '-mx-1 px-1 py-1 bg-violet-400 bg-opacity-10 border border-violet-400 border-opacity-30' : ''}`}
+                    className={`flex items-center gap-3 rounded-lg ${isMe ? '-mx-1 px-1 py-1 bg-violet-400/10 border border-violet-400/30' : ''}`}
                   >
                     <span className={`font-disp font-bold text-sm w-5 ${isMe ? 'text-violet-400' : T.faint}`}>{idx + 1}</span>
                     <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold ${isMe ? 'bg-violet-400 text-slate-950' : T.track}`}>
@@ -1402,12 +1585,29 @@ export default function Dashboard({
 
         <Eyebrow className={`${T.faint} mb-2`}>Log a Lift</Eyebrow>
         <div className={`rounded-2xl border ${T.card} ${T.border} p-4 mb-6`}>
+          <div className={`flex rounded-xl border p-1 mb-3 ${T.border}`}>
+            {['lift', 'cardio'].map((t) => (
+              <button
+                key={t}
+                onClick={() => {
+                  setLogTab(t);
+                  setSelectedExercise(t === 'lift' ? LIFT_EXERCISES[0].name : CARDIO_EXERCISES[0].name);
+                }}
+                className={`flex-1 py-1.5 rounded-lg text-sm font-semibold capitalize transition-all active:scale-95 ${
+                  logTab === t ? 'bg-violet-400 text-slate-950' : T.sub
+                }`}
+              >
+                {t}
+              </button>
+            ))}
+          </div>
+
           <select
             value={selectedExercise}
             onChange={(e) => setSelectedExercise(e.target.value)}
             className={`w-full rounded-xl border px-3 py-2 text-sm mb-2 outline-none ${T.card} ${T.border} ${T.text}`}
           >
-            {EXERCISES.map((ex) => (
+            {(logTab === 'lift' ? LIFT_EXERCISES : CARDIO_EXERCISES).map((ex) => (
               <option key={ex.name} value={ex.name}>
                 {ex.name}
               </option>
@@ -1422,29 +1622,41 @@ export default function Dashboard({
               className={`w-full rounded-xl border px-3 py-2 text-sm mb-2 outline-none ${T.card} ${T.border} ${T.text}`}
             />
           )}
-          <div className="grid grid-cols-3 gap-2 mb-2">
+
+          {logTab === 'cardio' ? (
             <input
               type="number"
-              value={logWeight}
-              onChange={(e) => setLogWeight(e.target.value)}
-              placeholder="Weight"
-              className={`rounded-xl border px-2 py-2 text-sm outline-none ${T.card} ${T.border} ${T.text}`}
+              value={logDuration}
+              onChange={(e) => setLogDuration(e.target.value)}
+              placeholder="Duration (minutes)"
+              className={`w-full rounded-xl border px-3 py-2 text-sm mb-2 outline-none ${T.card} ${T.border} ${T.text}`}
             />
-            <input
-              type="number"
-              value={logReps}
-              onChange={(e) => setLogReps(e.target.value)}
-              placeholder="Reps"
-              className={`rounded-xl border px-2 py-2 text-sm outline-none ${T.card} ${T.border} ${T.text}`}
-            />
-            <input
-              type="number"
-              value={logSets}
-              onChange={(e) => setLogSets(e.target.value)}
-              placeholder="Sets"
-              className={`rounded-xl border px-2 py-2 text-sm outline-none ${T.card} ${T.border} ${T.text}`}
-            />
-          </div>
+          ) : (
+            <div className="grid grid-cols-3 gap-2 mb-2">
+              <input
+                type="number"
+                value={logWeight}
+                onChange={(e) => setLogWeight(e.target.value)}
+                placeholder="Weight"
+                className={`rounded-xl border px-2 py-2 text-sm outline-none ${T.card} ${T.border} ${T.text}`}
+              />
+              <input
+                type="number"
+                value={logReps}
+                onChange={(e) => setLogReps(e.target.value)}
+                placeholder="Reps"
+                className={`rounded-xl border px-2 py-2 text-sm outline-none ${T.card} ${T.border} ${T.text}`}
+              />
+              <input
+                type="number"
+                value={logSets}
+                onChange={(e) => setLogSets(e.target.value)}
+                placeholder="Sets"
+                className={`rounded-xl border px-2 py-2 text-sm outline-none ${T.card} ${T.border} ${T.text}`}
+              />
+            </div>
+          )}
+
           <button
             onClick={logLift}
             disabled={logBusy}
@@ -1558,12 +1770,140 @@ export default function Dashboard({
             </div>
           )}
         </div>
+
+        <div className="mb-2">
+          <Eyebrow className={`${T.faint} mb-2`}>Nutrition</Eyebrow>
+          <div className={`rounded-2xl border ${T.card} ${T.border} p-4 mb-4`}>
+            <div className="flex items-center justify-between mb-2">
+              <span className="font-disp font-bold text-xl">
+                {todayFood.reduce((sum, f) => sum + f.calories, 0).toLocaleString()} / {calorieGoal.toLocaleString()}
+              </span>
+              <span className={`text-xs ${T.faint}`}>cal today</span>
+            </div>
+            <div className={`w-full h-2 rounded-full ${T.track} overflow-hidden mb-3`}>
+              <div
+                className="h-full rounded-full bg-violet-400"
+                style={{
+                  width: `${Math.min(100, (todayFood.reduce((sum, f) => sum + f.calories, 0) / calorieGoal) * 100)}%`,
+                  transition: 'width 400ms ease',
+                }}
+              />
+            </div>
+
+            <div className="flex gap-2 mb-3">
+              <input
+                type="number"
+                value={goalInput}
+                onChange={(e) => setGoalInput(e.target.value)}
+                placeholder="Daily goal"
+                className={`flex-1 rounded-xl border px-3 py-2 text-sm outline-none ${T.card} ${T.border} ${T.text}`}
+              />
+              <button
+                onClick={saveCalorieGoal}
+                className="font-disp font-bold text-xs uppercase tracking-wide px-3 py-2 rounded-lg bg-violet-400 text-slate-950 transition-all active:scale-95"
+              >
+                Set Goal
+              </button>
+            </div>
+
+            <div className="flex gap-2 mb-3">
+              <input
+                value={foodName}
+                onChange={(e) => setFoodName(e.target.value)}
+                placeholder="Food"
+                className={`flex-1 rounded-xl border px-3 py-2 text-sm outline-none ${T.card} ${T.border} ${T.text}`}
+              />
+              <input
+                type="number"
+                value={foodCalories}
+                onChange={(e) => setFoodCalories(e.target.value)}
+                placeholder="Cal"
+                className={`w-20 rounded-xl border px-3 py-2 text-sm outline-none ${T.card} ${T.border} ${T.text}`}
+              />
+              <button
+                onClick={addFood}
+                disabled={foodBusy}
+                className="font-disp font-bold text-xs uppercase tracking-wide px-3 py-2 rounded-lg bg-violet-400 text-slate-950 transition-all active:scale-95 disabled:opacity-50"
+              >
+                Add
+              </button>
+            </div>
+
+            {todayFood.length > 0 && (
+              <div className="space-y-1.5 mb-1">
+                {todayFood.map((f) => (
+                  <div key={f.id} className="flex items-center gap-2">
+                    <span className="flex-1 text-sm">{f.food_name}</span>
+                    <span className={`text-xs font-semibold ${T.faint}`}>{f.calories} cal</span>
+                    <button onClick={() => deleteFood(f.id)} className={T.faint}>
+                      <X size={14} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className={`rounded-2xl border ${T.card} ${T.border} p-4 mb-4`}>
+            <Eyebrow className={`${T.faint} mb-3`}>Last 7 Days</Eyebrow>
+            <div className="flex items-end justify-between gap-1.5" style={{ height: 80 }}>
+              {weeklyCalories.map((d, i) => {
+                const pct = calorieGoal > 0 ? Math.min(100, (d.total / calorieGoal) * 100) : 0;
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center justify-end h-full">
+                    <div
+                      className="w-full rounded-t bg-violet-400"
+                      style={{ height: `${Math.max(2, pct)}%`, transition: 'height 400ms ease' }}
+                    />
+                    <span className={`text-xs ${T.faint} mt-1`}>{d.label}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <div className={`rounded-2xl border ${T.card} ${T.border} p-4`}>
+            <Eyebrow className={`${T.faint} mb-2`}>Resources</Eyebrow>
+            <p className={`text-xs ${T.sub} mb-1.5`}>
+              {initialWeight
+                ? `A common protein target for active people is roughly ${Math.round(initialWeight * 1.6)}g/day, based on your logged weight.`
+                : 'Add your weight in Profile to see a personalized protein reference here.'}
+            </p>
+            <p className={`text-xs ${T.sub}`}>This is general reference info, not medical advice — check with a professional for personalized nutrition guidance.</p>
+          </div>
+        </div>
       </>
     );
   } else if (activeTab === 'ranks') {
     mainContent = (
       <>
-        <h1 className="font-disp font-bold text-2xl mb-4">Ranks</h1>
+        <div className="flex items-center justify-between mb-4">
+          <h1 className="font-disp font-bold text-2xl">Ranks</h1>
+          <button onClick={() => setShowAllRanks((v) => !v)} className={`text-xs font-semibold ${A.primary}`}>
+            {showAllRanks ? 'Hide' : 'View'} All Tiers
+          </button>
+        </div>
+
+        {showAllRanks && (
+          <div className={`rounded-2xl border ${T.card} ${T.border} p-4 mb-4 space-y-2`}>
+            {RANK_TIERS.map((tier) => {
+              const isCurrent = tier.name === myRank.name;
+              return (
+                <div
+                  key={tier.name}
+                  className={`flex items-center justify-between rounded-lg px-2 py-1.5 ${isCurrent ? 'bg-violet-400/10 border border-violet-400/30' : ''}`}
+                >
+                  <span className="flex items-center gap-2 text-sm font-semibold" style={{ color: tier.color }}>
+                    <Shield size={14} fill={tier.color} fillOpacity={0.3} />
+                    {tier.name}
+                  </span>
+                  <span className={`text-xs ${T.faint}`}>Level {tier.minLevel}+</span>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
         <div className={`flex rounded-xl border p-1 mb-4 ${T.card} ${T.border}`}>
           {['friends', 'guild', 'global'].map((key) => (
             <button
@@ -1685,7 +2025,7 @@ export default function Dashboard({
                   {showGap && <div className={`text-center text-xs py-1 ${T.faint}`}>· · ·</div>}
                   <div
                     className={`flex items-center gap-3 rounded-lg px-2 py-2 ${
-                      p.isUser ? 'bg-violet-400 bg-opacity-10 border border-violet-400 border-opacity-30' : ''
+                      p.isUser ? 'bg-violet-400/10 border border-violet-400/30' : ''
                     }`}
                   >
                     <span className={`font-disp font-bold text-sm w-8 ${medalColor}`}>{p.rank}</span>
@@ -1778,7 +2118,7 @@ export default function Dashboard({
               <div
                 key={p.userId}
                 className={`flex items-center gap-3 rounded-lg px-2 py-2 ${
-                  isMe ? 'bg-violet-400 bg-opacity-10 border border-violet-400 border-opacity-30' : ''
+                  isMe ? 'bg-violet-400/10 border border-violet-400/30' : ''
                 }`}
               >
                 <span className={`font-disp font-bold text-sm w-8 ${T.faint}`}>{idx + 1}</span>
@@ -1909,6 +2249,11 @@ export default function Dashboard({
             {pendingCompletions.length > 0 && (
               <div className="mt-3">
                 <Eyebrow className={`${T.faint} mb-2`}>Verify Submissions</Eyebrow>
+                {pendingCompletions.every((c) => c.user_id === userId) && (
+                  <p className={`text-xs ${T.faint} mb-2`}>
+                    Only your own submissions are pending — you can't verify yourself. Someone else in either guild needs to check these.
+                  </p>
+                )}
                 <div className="space-y-2">
                   {pendingCompletions.map((c) => (
                     <div key={c.id} className={`flex items-center gap-2 rounded-lg border p-2 ${T.border}`}>
@@ -1953,6 +2298,15 @@ export default function Dashboard({
                     <span className={`text-xs ${T.faint}`}>{m.time}</span>
                     <p className="text-sm break-words">{m.message}</p>
                   </div>
+                  {m.userId !== userId && (
+                    <button
+                      onClick={() => setReportTarget({ userId: m.userId, username: m.username })}
+                      className={T.faint}
+                      aria-label="Report"
+                    >
+                      <Flag size={13} />
+                    </button>
+                  )}
                 </div>
               ))
             )}
@@ -2049,6 +2403,36 @@ export default function Dashboard({
           <RankBadge level={level} size="lg" />
         </div>
 
+        <div className={`rounded-2xl border ${T.card} ${T.border} p-4 mb-6`}>
+          <Eyebrow className={`${T.faint} mb-2`}>Your Character</Eyebrow>
+          <div className="w-28 mx-auto">
+            <BodyDiagram activeZones={[]} glowLevel={Math.min(100, workoutCount * 3 + longestStreak)} />
+          </div>
+          <p className={`text-xs ${T.faint} text-center mt-2`}>Glows brighter the more consistent you are.</p>
+          <div className="grid grid-cols-2 gap-2 mt-3">
+            <input
+              type="number"
+              value={heightInput}
+              onChange={(e) => setHeightInput(e.target.value)}
+              placeholder="Height (cm)"
+              className={`rounded-xl border px-3 py-2 text-sm outline-none ${T.card} ${T.border} ${T.text}`}
+            />
+            <input
+              type="number"
+              value={weightInput}
+              onChange={(e) => setWeightInput(e.target.value)}
+              placeholder="Weight (kg)"
+              className={`rounded-xl border px-3 py-2 text-sm outline-none ${T.card} ${T.border} ${T.text}`}
+            />
+          </div>
+          <button
+            onClick={saveBodyStats}
+            className="w-full mt-2 font-disp font-bold text-xs uppercase tracking-wide px-3 py-2 rounded-lg bg-violet-400 text-slate-950 transition-all active:scale-95"
+          >
+            Save Stats
+          </button>
+        </div>
+
         <div className="grid grid-cols-2 gap-3 mb-6">
           {PROFILE_STATS.map((s) => (
             <div key={s.label} className={`rounded-xl border p-3 ${T.card} ${T.border}`}>
@@ -2065,7 +2449,7 @@ export default function Dashboard({
               key={b.id}
               className={`flex flex-col items-center gap-2 rounded-xl border p-3 ${T.card} ${T.border} ${!b.unlocked ? 'opacity-40' : ''}`}
             >
-              <div className={`w-12 h-12 rounded-full flex items-center justify-center ${b.unlocked ? 'bg-violet-400 bg-opacity-10' : T.track}`}>
+              <div className={`w-12 h-12 rounded-full flex items-center justify-center ${b.unlocked ? 'bg-violet-400/10' : T.track}`}>
                 {b.unlocked ? <b.Icon size={22} className={A.primary} /> : <Lock size={18} className={T.faint} />}
               </div>
               <span className={`text-xs text-center font-medium ${b.unlocked ? T.text : T.faint}`}>{b.label}</span>
@@ -2135,6 +2519,69 @@ export default function Dashboard({
         )}
 
         <Confetti active={confettiActive} />
+
+        {reportTarget && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-8">
+            <div className={`rounded-2xl border ${T.card} ${T.border} p-4 w-full max-w-xs`}>
+              <div className="flex items-center gap-2 mb-3">
+                <Flag size={16} className="text-rose-400" />
+                <h2 className="font-disp font-bold text-lg">Report {reportTarget.username}</h2>
+              </div>
+              <select
+                value={reportReason}
+                onChange={(e) => setReportReason(e.target.value)}
+                className={`w-full rounded-xl border px-3 py-2 text-sm mb-2 outline-none ${T.card} ${T.border} ${T.text}`}
+              >
+                <option>Harassment</option>
+                <option>Bullying</option>
+                <option>Spam</option>
+                <option>Inappropriate content</option>
+                <option>Other</option>
+              </select>
+              <textarea
+                value={reportDetails}
+                onChange={(e) => setReportDetails(e.target.value)}
+                placeholder="Add details (optional)"
+                rows={3}
+                className={`w-full rounded-xl border px-3 py-2 text-sm mb-3 outline-none resize-none ${T.card} ${T.border} ${T.text}`}
+              />
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setReportTarget(null)}
+                  className={`flex-1 font-disp font-bold text-xs uppercase tracking-wide px-3 py-2 rounded-lg ${T.track} ${T.sub}`}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={submitReport}
+                  disabled={reportBusy}
+                  className="flex-1 font-disp font-bold text-xs uppercase tracking-wide px-3 py-2 rounded-lg bg-rose-500 text-white disabled:opacity-50"
+                >
+                  Submit
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {musclePopup && (
+          <div
+            className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 px-8"
+            onClick={() => setMusclePopup(null)}
+          >
+            <div className={`rounded-2xl border ${T.card} ${T.border} p-5 w-full max-w-xs text-center`}>
+              <p className={`font-disp font-bold text-lg mb-1 ${musclePopup.isPR ? 'text-emerald-400' : T.text}`}>
+                {musclePopup.isPR ? `New PR! ${musclePopup.exerciseName}` : musclePopup.exerciseName}
+              </p>
+              <div className="w-32 mx-auto my-2">
+                <BodyDiagram activeZones={musclePopup.zones} />
+              </div>
+              <p className={`text-xs ${T.faint} capitalize`}>
+                {musclePopup.zones.length > 0 ? musclePopup.zones.join(' · ') : 'Logged'}
+              </p>
+            </div>
+          </div>
+        )}
 
         <div key={activeTab} className="relative px-5 pt-5 pb-28 tab-fade">{mainContent}</div>
 

@@ -1,0 +1,9 @@
+{
+  "appId": "com.gymquest.app",
+  "appName": "GymQuest",
+  "webDir": "dist",
+  "server": {
+    "url": "https://gymquest-beta.vercel.app",
+    "cleartext": false
+  }
+}

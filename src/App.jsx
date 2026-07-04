@@ -97,11 +97,15 @@ async function fetchActivity(myId, friendIds) {
 }
 
 async function fetchAttributeCounts(myId) {
-  const { data } = await supabase.from('exercise_logs').select('category, reps, sets').eq('user_id', myId);
+  const { data } = await supabase.from('exercise_logs').select('category, reps, sets, duration_minutes').eq('user_id', myId);
   const counts = { strength: 0, power: 0, endurance: 0, stamina: 0 };
   (data || []).forEach((r) => {
-    const vol = (r.reps || 0) * (r.sets || 1);
-    if (counts[r.category] !== undefined) counts[r.category] += vol;
+    if (r.category === 'endurance') {
+      counts.endurance += r.duration_minutes || 0;
+    } else {
+      const vol = (r.reps || 0) * (r.sets || 1);
+      if (counts[r.category] !== undefined) counts[r.category] += vol;
+    }
   });
   return counts;
 }
@@ -119,7 +123,7 @@ async function fetchWorkoutCount(myId) {
 async function fetchCompletedDates(myId) {
   const cutoff = new Date();
   cutoff.setDate(cutoff.getDate() - 90);
-  const cutoffStr = cutoff.toISOString().slice(0, 10);
+  const cutoffStr = localDateStr(cutoff);
   const { data } = await supabase
     .from('quests')
     .select('quest_date')
@@ -133,7 +137,7 @@ async function fetchCompletedDates(myId) {
 async function fetchWeeklyStats(myId) {
   const weekAgo = new Date();
   weekAgo.setDate(weekAgo.getDate() - 7);
-  const weekAgoStr = weekAgo.toISOString().slice(0, 10);
+  const weekAgoStr = localDateStr(weekAgo);
 
   const { data: weekQuests } = await supabase
     .from('quests')
@@ -163,6 +167,48 @@ async function fetchCheckinPhotos(myId) {
     .order('created_at', { ascending: false })
     .limit(30);
   return data || [];
+}
+
+async function fetchTodayFood(myId) {
+  const today = localDateStr(new Date());
+  const { data } = await supabase
+    .from('food_logs')
+    .select('*')
+    .eq('user_id', myId)
+    .eq('logged_date', today)
+    .order('created_at', { ascending: true });
+  return data || [];
+}
+
+function localDateStr(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function parseLocalDate(dateStr) {
+  const [y, m, d] = dateStr.split('-').map(Number);
+  return new Date(y, m - 1, d);
+}
+
+async function fetchWeeklyCalories(myId) {
+  const days = [];
+  for (let i = 6; i >= 0; i--) {
+    const d = new Date();
+    d.setDate(d.getDate() - i);
+    days.push(localDateStr(d));
+  }
+  const { data } = await supabase
+    .from('food_logs')
+    .select('calories, logged_date')
+    .eq('user_id', myId)
+    .gte('logged_date', days[0]);
+  return days.map((dateStr) => {
+    const total = (data || []).filter((f) => f.logged_date === dateStr).reduce((sum, f) => sum + f.calories, 0);
+    const label = parseLocalDate(dateStr).toLocaleDateString('en-US', { weekday: 'narrow' });
+    return { date: dateStr, total, label };
+  });
 }
 
 async function fetchGlobalLeaderboard(myId) {
@@ -263,6 +309,8 @@ export default function App() {
   const [checkinPhotos, setCheckinPhotos] = useState([]);
   const [globalLeaderboard, setGlobalLeaderboard] = useState([]);
   const [battleWinCount, setBattleWinCount] = useState(0);
+  const [todayFood, setTodayFood] = useState([]);
+  const [weeklyCalories, setWeeklyCalories] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -299,7 +347,7 @@ export default function App() {
         .single();
       setProfile(profileData);
 
-      const today = new Date().toISOString().slice(0, 10);
+      const today = localDateStr(new Date());
       const { data: questData } = await supabase
         .from('quests')
         .select('*')
@@ -387,6 +435,12 @@ export default function App() {
       const wins = await fetchBattleWinCount(currentGuildId);
       setBattleWinCount(wins);
 
+      const food = await fetchTodayFood(session.user.id);
+      setTodayFood(food);
+
+      const weekCals = await fetchWeeklyCalories(session.user.id);
+      setWeeklyCalories(weekCals);
+
       setLoading(false);
     };
 
@@ -421,6 +475,8 @@ export default function App() {
       initialWorkoutCount={workoutCount}
       createdAt={profile.created_at}
       initialUsername={profile.username}
+      initialHeight={profile.height_cm}
+      initialWeight={profile.weight_kg}
       initialSplit={profile.split}
       initialSplitDayIndex={profile.split_day_index || 0}
       initialQuests={quests}
@@ -437,6 +493,9 @@ export default function App() {
       initialCheckinPhotos={checkinPhotos}
       initialGlobalLeaderboard={globalLeaderboard}
       initialBattleWinCount={battleWinCount}
+      initialCalorieGoal={profile.calorie_goal || 2000}
+      initialTodayFood={todayFood}
+      initialWeeklyCalories={weeklyCalories}
       onSignOut={handleSignOut}
     />
   );
